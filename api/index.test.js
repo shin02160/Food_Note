@@ -1,0 +1,4 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {seal,unseal,normalize} from './index.js';
+process.env.APP_SECRET='test-secret-012345678901234567890123456789';
+test('share roundtrip, expiration and tampering',()=>{const input=[{name:'식당',menu:'포케'}],now=1000000,t=seal(input,now);assert.deepEqual(unseal(t,now),input);assert.throws(()=>unseal(t,now+8*86400000));const b=Buffer.from(t,'base64url');b[30]^=1;assert.throws(()=>unseal(b.toString('base64url'),now));});
+test('Notion properties and privacy mapping',()=>{const r=normalize({id:'1',properties:{'상호명':{title:[{plain_text:'우키샌드위치'}]},'방문 날짜':{date:{start:'2026-11-23'}},'지역':{select:{name:'경기'}},'주문 메뉴':{rich_text:[{plain_text:'포케'}]},'일상 기록':{relation:[{id:'private'}]}}});assert.equal(r.name,'우키샌드위치');assert.equal(r.date,'2026-11-23');assert.equal(r.menu,'포케');assert.equal(r['일상 기록'],undefined);assert.deepEqual(r.photos,[]);});
