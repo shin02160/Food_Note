@@ -118,3 +118,38 @@ body{font-family:var(--body);font-size:15px;line-height:1.65}h1,h2,h3,.card h3,.
 }
 
 #detailStatus { margin: 0 0 10px; }
+
+#regionHeading,
+#selectedRegion { margin: 10px 0; font-size: 18px; }
+
+.region-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 8px;
+}
+
+.region-choice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 48px;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.region-count { flex-shrink: 0; color: var(--green); }
+
+.region-selection {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0;
+}
+
+.region-selection button { min-height: 44px; flex-shrink: 0; }
+#selectedRegion { overflow-wrap: anywhere; }
+
+@media (max-width: 550px) {
+  .region-choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

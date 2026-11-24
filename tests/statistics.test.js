@@ -23,3 +23,12 @@ test('gallery selects one valid photo per shop from the latest matching visit',a
   assert.deepEqual(galleryEntries(visits,{period:'2026-01',region:'서울'}).map(entry=>entry.visitId),['old']);
   assert.deepEqual(galleryEntries(visits,{period:'2026-03'}),[]);
 });
+
+test('restaurant regions split Seoul by district and keep other regions grouped', async () => {
+  const {restaurantRegion} = await import('../public/statistics.js');
+  assert.equal(restaurantRegion({region:'서울',area:'종로'}),'서울.종로');
+  assert.equal(restaurantRegion({region:'서울특별시',area:'서울 송파구 잠실동'}),'서울.송파');
+  assert.equal(restaurantRegion({region:'서울'}),'서울.세부 지역 미입력');
+  assert.equal(restaurantRegion({region:'경기',area:'성남시'}),'경기');
+  assert.equal(restaurantRegion({}),'지역 미입력');
+});

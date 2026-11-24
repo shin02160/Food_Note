@@ -10,6 +10,14 @@ export function summarize(records){const shops=groupRestaurants(records);const r
 const matches=(actual,wanted)=>!wanted||(wanted==='__missing'?!norm(actual):norm(actual)===wanted);
 export function filterRecords(records,{region='',type='',revisit='',query='',menu='',period='all'}={}){const q=norm(query).toLowerCase();return periodRecords(records,period).filter(r=>matches(r.region,region)&&matches(r.type,type)&&matches(r.revisit,revisit)&&(!menu||menuNames(r.menu).includes(menu))&&(!q||[r.name,r.region,r.area,r.type,r.menu,r.review].join(' ').toLowerCase().includes(q)));}
 
+export function restaurantRegion(restaurant){
+  const region=norm(restaurant.region);
+  if(!/^서울(?:특별시|시)?$/.test(region))return region||'지역 미입력';
+  const area=norm(restaurant.area).replace(/^서울(?:특별시|시)?[\s.·]+/,'');
+  const district=area.match(/^([^\s.·]+?)구(?:[\s.·]|$)/)?.[1]||area;
+  return '서울.'+(district||'세부 지역 미입력');
+}
+
 export function galleryEntries(records,{region='',type='',period='all'}={}){
   const visits=filterRecords(records,{region,type,period}).sort((a,b)=>
     String(b.date??'').localeCompare(String(a.date??''))||String(a.id).localeCompare(String(b.id)));
