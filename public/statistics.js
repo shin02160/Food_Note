@@ -10,6 +10,18 @@ export function summarize(records){const shops=groupRestaurants(records);const r
 const matches=(actual,wanted)=>!wanted||(wanted==='__missing'?!norm(actual):norm(actual)===wanted);
 export function filterRecords(records,{region='',type='',revisit='',query='',menu='',period='all'}={}){const q=norm(query).toLowerCase();return periodRecords(records,period).filter(r=>matches(r.region,region)&&matches(r.type,type)&&matches(r.revisit,revisit)&&(!menu||menuNames(r.menu).includes(menu))&&(!q||[r.name,r.region,r.area,r.type,r.menu,r.review].join(' ').toLowerCase().includes(q)));}
 
-// Gallery entries keep the exact visit and shop identity, even across repeat visits.
-export function galleryEntries(records,{region='',type='',period='all'}={}){return filterRecords(records,{region,type,period}).slice().sort((a,b)=>String(b.date??'').localeCompare(String(a.date??''))||String(a.id).localeCompare(String(b.id))).flatMap(r=>(r.photos||[]).filter(p=>typeof p.url==='string'&&p.url.startsWith('https://')).map((p,i)=>({...p,shopId:shopKey(r),visitId:r.id,name:r.name,date:r.date,region:r.region,type:r.type,index:i})));}
+export function galleryEntries(records,{region='',type='',period='all'}={}){
+  const visits=filterRecords(records,{region,type,period}).sort((a,b)=>
+    String(b.date??'').localeCompare(String(a.date??''))||String(a.id).localeCompare(String(b.id)));
+  const entries=new Map();
+  for(const visit of visits){
+    const shopId=shopKey(visit);
+    if(entries.has(shopId))continue;
+    const photo=visit.photos?.find(item=>typeof item.url==='string'&&item.url.startsWith('https://'));
+    if(!photo)continue;
+    const {name,date,region,type}=visit;
+    entries.set(shopId,{...photo,shopId,visitId:visit.id,name,date,region,type});
+  }
+  return [...entries.values()];
+}
 export function favoriteShops(shops){return shops.filter(s=>norm(s.revisit)==='또 갈래');}
