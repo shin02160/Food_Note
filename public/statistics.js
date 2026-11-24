@@ -1,0 +1,9 @@
+const missing='미입력';
+const norm=v=>String(v??'').trim().replace(/\s+/g,' ');
+export {norm as normalizeCategory};
+export function menuNames(menu){return [...new Set(String(menu??'').split(/[,，\n;；]/).map(norm).filter(Boolean))];}
+export function periodRecords(records,period='all'){return period==='all'?records:records.filter(r=>String(r.date??'').slice(0,7)===period);}
+function counts(records,labels,denominator=records.length){const m=new Map();for(const r of records)for(const label of labels(r)){m.set(label,(m.get(label)||0)+1);}return [...m].map(([label,count])=>({label,count,percent:denominator?100*count/denominator:0})).sort((a,b)=>b.count-a.count||a.label.localeCompare(b.label,'ko'));}
+export function summarize(records){return {visits:records.length,places:new Set(records.map(r=>JSON.stringify([norm(String(r.name??'').replaceAll('_',' ')),norm(r.region),norm(r.area)]))).size,regions:new Set(records.map(r=>norm(r.region)).filter(Boolean)).size,revisitYes:records.filter(r=>norm(r.revisit)==='또 갈래').length,revisitUnknown:records.filter(r=>!norm(r.revisit)).length,byRegion:counts(records,r=>[norm(r.region)||missing]),byType:counts(records,r=>[norm(r.type)||missing]),byRevisit:counts(records,r=>[norm(r.revisit)||missing]),byMonth:counts(records,r=>[norm(r.date).slice(0,7)||missing]).filter(x=>x.label!==missing).sort((a,b)=>b.label.localeCompare(a.label)),byMenu:counts(records,r=>menuNames(r.menu))};}
+const matches=(actual,wanted)=>!wanted||(wanted==='__missing'?!norm(actual):norm(actual)===wanted);
+export function filterRecords(records,{region='',type='',revisit='',query='',menu='',period='all'}={}){const q=norm(query).toLowerCase();return periodRecords(records,period).filter(r=>matches(r.region,region)&&matches(r.type,type)&&matches(r.revisit,revisit)&&(!menu||menuNames(r.menu).includes(menu))&&(!q||[r.name,r.region,r.area,r.type,r.menu,r.review].join(' ').toLowerCase().includes(q)));}
