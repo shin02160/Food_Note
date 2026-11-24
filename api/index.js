@@ -8,11 +8,27 @@ const sharingEnabled=()=>Boolean(process.env.APP_SECRET?.length>=32);
 export function seal(records,now=Date.now()){const iv=randomBytes(12),c=createCipheriv('aes-256-gcm',key(),iv);const data=Buffer.concat([c.update(JSON.stringify({exp:now+7*86400000,records})),c.final()]);return Buffer.concat([iv,c.getAuthTag(),data]).toString('base64url');}
 export function unseal(token,now=Date.now()){const b=Buffer.from(token,'base64url');const d=createDecipheriv('aes-256-gcm',key(),b.subarray(0,12));d.setAuthTag(b.subarray(12,28));const p=JSON.parse(Buffer.concat([d.update(b.subarray(28)),d.final()]));if(p.exp<now)throw Error('만료된 공유 링크입니다.');return p.records;}
 const safeMap=(value,hosts)=>{try{const u=new URL(value);return u.protocol==='https:'&&hosts.includes(u.hostname)?u.href:'';}catch{return '';}};
+function naverPlaceUrl(value){
+  const safe=safeMap(value,['map.naver.com','m.map.naver.com','place.naver.com','m.place.naver.com','pcmap.place.naver.com']);
+  if(!safe)return '';
+  const url=new URL(safe);
+  const place=url.pathname.match(/\/(restaurant|place)\/(\d+)(?:\/|$)/);
+  const entry=url.searchParams.get('entry');
+  if(place){
+    const category=place[1]==='restaurant'||['map.naver.com','m.map.naver.com'].includes(url.hostname)?'restaurant':place[1];
+    return 'https://m.place.naver.com/'+category+'/'+place[2]+'/home';
+  }
+  if(url.hostname==='map.naver.com'&&entry==='plt'){
+    const id=url.searchParams.get('id');
+    if(/^\d+$/.test(id??''))return 'https://m.place.naver.com/restaurant/'+id+'/home';
+  }
+  return '';
+}
 const txt=p=>(p?.rich_text??p?.title??[]).map(x=>x.plain_text??x.text?.content??'').join('');
-export function normalize(page){const p=page.properties??{};return {id:page.id,shopId:p['식당']?.relation?.[0]?.id??'',name:txt(p['상호명']),date:p['방문 날짜']?.date?.start?.slice(0,10)??'',region:p['지역']?.select?.name??'',area:txt(p['세부 지역']),type:p['음식 종류']?.select?.name??'',menu:txt(p['주문 메뉴']),review:txt(p['간단 후기']),revisit:p['재방문 의사']?.select?.name??'',address:txt(p['주소']),naverMap:safeMap(p['네이버 지도']?.url,['map.naver.com','naver.me']),googleMap:safeMap(p['Google Maps']?.url,['www.google.com','maps.google.com','maps.app.goo.gl']),photos:(p['사진']?.files??[]).map((f,i)=>({index:i,url:f.file?.url??f.external?.url??''})).filter(f=>f.url.startsWith('https://'))};}
+export function normalize(page){const p=page.properties??{};return {id:page.id,shopId:p['식당']?.relation?.[0]?.id??'',name:txt(p['상호명']),date:p['방문 날짜']?.date?.start?.slice(0,10)??'',region:p['지역']?.select?.name??'',area:txt(p['세부 지역']),type:p['음식 종류']?.select?.name??'',menu:txt(p['주문 메뉴']),review:txt(p['간단 후기']),revisit:p['재방문 의사']?.select?.name??'',address:txt(p['주소']),naverMap:safeMap(p['네이버 지도']?.url,['map.naver.com','naver.me']),naverPlace:naverPlaceUrl(p['네이버 지도']?.url),googleMap:safeMap(p['Google Maps']?.url,['www.google.com','maps.google.com','maps.app.goo.gl']),photos:(p['사진']?.files??[]).map((f,i)=>({index:i,url:f.file?.url??f.external?.url??''})).filter(f=>f.url.startsWith('https://'))};}
 async function notion(path,body){const r=await fetch('https://api.notion.com/v1/'+path,{method:'POST',headers:{Authorization:`Bearer ${process.env.NOTION_TOKEN}`,'Notion-Version':'2025-09-03','Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok){const error=new Error('Notion 조회 실패 ('+r.status+')');error.status=r.status;throw error;}return r.json();}
 async function queryAll(ds,sorts){let cursor,all=[];do{const p=await notion(`data_sources/${ds}/query`,{page_size:100,...(sorts?{sorts}:{}),...(cursor?{start_cursor:cursor}:{})});all.push(...p.results.filter(x=>x.object==='page'&&!x.archived&&!x.in_trash));cursor=p.has_more?p.next_cursor:null;}while(cursor);return all;}
-export function joinVisits(visits,masters){const shops=new Map(masters.map(p=>[p.id,normalize(p)]));return visits.map(p=>{const v=normalize(p),m=shops.get(v.shopId);if((p.properties?.['식당']?.relation??[]).length!==1||!m)throw Error('Notion 조회 실패: 방문 이력의 식당 연결을 확인하세요.');return {...v,name:m.name,region:m.region,area:m.area,type:m.type,address:m.address,naverMap:m.naverMap,googleMap:m.googleMap,shopRevisit:m.revisit};});}
+export function joinVisits(visits,masters){const shops=new Map(masters.map(p=>[p.id,normalize(p)]));return visits.map(p=>{const v=normalize(p),m=shops.get(v.shopId);if((p.properties?.['식당']?.relation??[]).length!==1||!m)throw Error('Notion 조회 실패: 방문 이력의 식당 연결을 확인하세요.');return {...v,name:m.name,region:m.region,area:m.area,type:m.type,address:m.address,naverMap:m.naverMap,naverPlace:m.naverPlace,googleMap:m.googleMap,shopRevisit:m.revisit};});}
 async function records(){
   const visitSource=process.env.NOTION_VISIT_DATA_SOURCE_ID||process.env.NOTION_DATA_SOURCE_ID||DS;
   const masterSource=process.env.NOTION_RESTAURANT_DATA_SOURCE_ID||MASTER;

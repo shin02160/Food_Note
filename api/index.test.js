@@ -30,3 +30,11 @@ test('records remain available when the restaurant data source is inaccessible',
   assert.equal(res.payload.records[0].shopRevisit,'');
   assert.ok(res.payload.warning);
 });
+
+test('Naver restaurant links use place detail when the URL includes a place ID', () => {
+  const place = url => normalize({properties:{'네이버 지도':{url}}}).naverPlace;
+  assert.equal(place('https://map.naver.com/p/search/cafe/place/12345'),'https://m.place.naver.com/restaurant/12345/home');
+  assert.equal(place('https://pcmap.place.naver.com/restaurant/12345/review'),'https://m.place.naver.com/restaurant/12345/home');
+  assert.equal(place('https://map.naver.com/p/search/cafe'),'');
+  assert.equal(place('https://example.com/restaurant/12345'),'');
+});
