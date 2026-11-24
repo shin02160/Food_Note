@@ -109,3 +109,12 @@ body{font-family:var(--body);font-size:15px;line-height:1.65}h1,h2,h3,.card h3,.
   .list .placeholder,
   .list .photo { width: 44px; height: 44px; }
 }
+
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+#detailStatus { margin: 0 0 10px; }
