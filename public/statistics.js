@@ -18,6 +18,23 @@ export function restaurantRegion(restaurant){
   return '서울.'+(district||'세부 지역 미입력');
 }
 
+const domesticRegions=/^(국내|한국|대한민국|서울(?:특별시|시)?|경기(?:도)?|인천(?:광역시)?|부산(?:광역시)?|대구(?:광역시)?|대전(?:광역시)?|광주(?:광역시)?|울산(?:광역시)?|세종(?:특별자치시)?|강원(?:도|특별자치도)?|충청[남북]도?|전라[남북]도?|경상[남북]도?|전북특별자치도|충[남북]|전[남북]|경[남북]|충청|전라|경상|제주(?:도|특별자치도)?)(?:[.·\s]|$)/;
+
+export function groupRegionCards(counts){
+  const groups=['국내','해외','지역 미입력'].map(label=>({label,items:[]}));
+  for(const [region,count] of counts){
+    const group=region==='지역 미입력'?2:domesticRegions.test(region)?0:1;
+    const priority=group===0
+      ? /^서울(?:[.·\s]|$)/.test(region)?0:/^경기(?:도)?(?:[.·\s]|$)/.test(region)?1:2
+      : /^(일본|日本|Japan|JP)(?:[.·\s]|$)/i.test(region)?0:/^(대만|타이완|臺灣|台灣|Taiwan|TW)(?:[.·\s]|$)/i.test(region)?1:2;
+    groups[group].items.push({region,count,priority});
+  }
+  for(const group of groups){
+    group.items.sort((a,b)=>a.priority-b.priority||a.region.localeCompare(b.region,'ko'));
+  }
+  return groups.filter(group=>group.items.length);
+}
+
 export function galleryEntries(records,{region='',type='',period='all'}={}){
   const visits=filterRecords(records,{region,type,period}).sort((a,b)=>
     String(b.date??'').localeCompare(String(a.date??''))||String(a.id).localeCompare(String(b.id)));

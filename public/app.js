@@ -1,4 +1,4 @@
-import {summarize,periodRecords,filterRecords,normalizeCategory,groupRestaurants,shopKey,galleryEntries,favoriteShops,restaurantRegion} from './statistics.js';
+import {summarize,periodRecords,filterRecords,normalizeCategory,groupRestaurants,shopKey,galleryEntries,favoriteShops,restaurantRegion,groupRegionCards} from './statistics.js';
 const $=id=>document.getElementById(id);const el=(tag,text,cls)=>{const e=document.createElement(tag);if(text!=null)e.textContent=text;if(cls)e.className=cls;return e};
 let loading=false;
 let activeTab='records',galleryPhotos=[],lightboxPhotos=[],galleryLightbox=false;
@@ -63,11 +63,18 @@ function renderRegionChooser(candidates){
     const region=restaurantRegion(candidate);
     counts.set(region,(counts.get(region)||0)+1);
   }
-  for(const [region,count] of [...counts].sort(([a],[b])=>a.localeCompare(b,'ko'))){
-    const button=el('button',null,'region-choice');
-    button.append(el('span',region),el('span',count+'곳','region-count'));
-    button.onclick=()=>{selectedRegion=region;render();$('selectedRegion').focus();};
-    $('regionChoices').append(button);
+  for(const group of groupRegionCards(counts)){
+    const section=el('section',null,'region-group');
+    if(group.label!=='지역 미입력')section.append(el('h3',group.label));
+    const choices=el('div',null,'region-choices');
+    for(const {region,count} of group.items){
+      const button=el('button',null,'region-choice');
+      button.append(el('span',region),el('span',count+'곳','region-count'));
+      button.onclick=()=>{selectedRegion=region;render();$('selectedRegion').focus();};
+      choices.append(button);
+    }
+    section.append(choices);
+    $('regionChoices').append(section);
   }
 }
 $('backToRegions').onclick=()=>{selectedRegion='';render();$('regionHeading').focus();};

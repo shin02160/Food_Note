@@ -32,3 +32,13 @@ test('restaurant regions split Seoul by district and keep other regions grouped'
   assert.equal(restaurantRegion({region:'경기',area:'성남시'}),'경기');
   assert.equal(restaurantRegion({}),'지역 미입력');
 });
+
+test('region cards prioritize Seoul, Gyeonggi, Japan and Taiwan in separate sections', async () => {
+  const {groupRegionCards} = await import('../public/statistics.js');
+  const counts = new Map(['미국','대만','부산','서울.송파','일본','경기도','서울.종로','지역 미입력'].map(region => [region, 1]));
+  assert.deepEqual(groupRegionCards(counts).map(({label,items}) => [label,items.map(item=>item.region)]),[
+    ['국내',['서울.송파','서울.종로','경기도','부산']],
+    ['해외',['일본','대만','미국']],
+    ['지역 미입력',['지역 미입력']],
+  ]);
+});

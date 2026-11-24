@@ -153,3 +153,6 @@ body{font-family:var(--body);font-size:15px;line-height:1.65}h1,h2,h3,.card h3,.
 @media (max-width: 550px) {
   .region-choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+.region-group + .region-group { margin-top: 16px; }
+.region-group h3 { margin: 0 0 6px; font-size: 15px; }
