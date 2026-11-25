@@ -38,3 +38,54 @@ test('Naver restaurant links use place detail when the URL includes a place ID',
   assert.equal(place('https://map.naver.com/p/search/cafe'),'');
   assert.equal(place('https://example.com/restaurant/12345'),'');
 });
+
+test('representative photo resolves via visit + unique filename, not stale signed URL or wrong index',async()=>{const {resolvePhotos}=await import('./index.js');const visits=[{id:'v',shopId:'s',date:'2026-11-01',photos:[{name:'b.jpg',url:'https://example.com/b'},{name:'a.jpg',url:'https://example.com/a'}]}],places=[{id:'s'}];const row=(id,name,order)=>({id,properties:{'식당':{relation:[{id:'s'}]},'방문 이력':{relation:[{id:'v'}]},'사진명':{title:[{plain_text:'식당 · 2026-11-01 · 1 · '+name}]},'대표 사진':{checkbox:true},'표시 순서':{number:order}}});resolvePhotos([row('p','a.jpg',1),row('q','b.jpg',2)],visits,places);assert.equal(places[0].cover.url,'https://example.com/a');const places2=[{id:'s'}];resolvePhotos([row('p','missing.jpg',1)],visits,places2);assert.equal(places2[0].cover,undefined);});
+test('unvisited place and wishlist fields never leak in public snapshots',async()=>{const {normalizePlace,clean}=await import('./index.js');const p=normalizePlace({id:'s',properties:{'상호명':{title:[{plain_text:'샵'}]},'장소 유형':{select:{name:'소품·굿즈샵'}},'위시리스트':{checkbox:true},'여행 계획':{relation:[{id:'secret'}]}}});assert.equal(p.wishlist,true);assert.equal(p.placeType,'소품·굿즈샵');const snapshot=clean(p,0);for(const k of ['travelIds','checklistIds','wishlist','plannedDate','interest','reference','cover','photos'])assert.equal(snapshot[k],undefined);});
+test('explicit brand relations attach to branches and visits, conflicts stay unmerged, share stays private',async()=>{const {attachBrands,clean}=await import('./index.js');const places=[{id:'a',shopId:'a'},{id:'b',shopId:'b'},{id:'c',shopId:'c'}],records=[{id:'v',shopId:'a'},{id:'w',shopId:'b'}];const brand=(id,name,ids)=>({id,properties:{'브랜드명':{title:[{plain_text:name}]},'지점':{relation:ids.map(id=>({id}))}}});assert.equal(attachBrands(places,records,[brand('h','호시노',['a','b']),brand('other','다른 브랜드',['b'])]),1);assert.equal(places[0].brandName,'호시노');assert.equal(records[0].brandId,'h');assert.equal(places[1].brandId,undefined);assert.equal(records[1].brandId,undefined);assert.equal(places[2].brandId,undefined);assert.equal(clean(records[0],0).brandId,undefined);assert.equal(clean(records[0],0).brandName,undefined);});
+
+test('public archive hides private data while an authenticated private view can read it', async t => {
+  const {default:handler}=await import('./index.js');
+  const env={NOTION_TOKEN:'test',APP_PASSWORD:'fixture-long-password'};
+  for(const [key,value] of Object.entries(env)){
+    const previous=process.env[key];
+    process.env[key]=value;
+    t.after(()=>{if(previous===undefined)delete process.env[key];else process.env[key]=previous;});
+  }
+  const page=(id,properties)=>({id,object:'page',properties});
+  const title=text=>({title:[{plain_text:text}]});
+  const relation=id=>({relation:[{id}]});
+  const places=[
+    page('visited',{'상호명':title('Visited'),'위시리스트':{checkbox:true},'여행 계획':relation('trip')}),
+    page('unvisited',{'상호명':title('Unvisited')}),
+  ];
+  const data={
+    '4226d8c5-8de1-812a-abad-000b3a03e68e':[page('visit',{'식당':relation('visited')})],
+    '4226d8c5-8de1-81e8-9ace-000b3415e595':places,
+    '4236d8c5-8de1-8160-8c51-000b130b7c7e':[page('wish',{'아이템명':title('Private wish'),'장소':relation('visited')})],
+  };
+  let wishQueries=0;
+  t.mock.method(globalThis,'fetch',async url=>{
+    const id=url.split('/').at(-2);
+    if(id==='4236d8c5-8de1-8160-8c51-000b130b7c7e')wishQueries++;
+    return Response.json({results:data[id]??[],has_more:false});
+  });
+  async function call(action,body,cookie){
+    const headers={};
+    const res={setHeader(key,value){headers[key]=value;},end(payload){this.payload=JSON.parse(payload);}};
+    await handler({method:body?'POST':'GET',url:'/api/index?action='+action,body,headers:{cookie}},res);
+    return {...res,headers};
+  }
+  const publicView=await call('records');
+  assert.equal(publicView.statusCode,200);
+  assert.equal(wishQueries,0);
+  assert.deepEqual(publicView.payload.places.map(p=>p.id),['visited']);
+  assert.equal(publicView.payload.places[0].travelIds,undefined);
+  assert.equal(publicView.payload.places[0].wishlist,undefined);
+  assert.deepEqual(publicView.payload.wishes,[]);
+  const login=await call('login',{password:env.APP_PASSWORD});
+  assert.equal(login.statusCode,200);
+  const authenticated=await call('records',undefined,login.headers['Set-Cookie'].split(';')[0]);
+  assert.deepEqual(authenticated.payload.places.map(p=>p.id),['visited','unvisited']);
+  assert.deepEqual(authenticated.payload.places[0].travelIds,['trip']);
+  assert.equal(authenticated.payload.wishes[0].name,'Private wish');
+});
