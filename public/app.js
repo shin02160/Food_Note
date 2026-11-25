@@ -94,7 +94,7 @@ async function load(){
   try{
     const result=await api('records');
     show(result.records);
-    updateStatus(result.warning||'맛집 기록 · Notion 연결됨');
+    updateStatus(result.warning||'');
   }catch(error){
     updateStatus(error.message);
   }finally{
