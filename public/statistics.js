@@ -3,9 +3,17 @@ const norm=v=>String(v??'').trim().replace(/\s+/g,' ');
 export {norm as normalizeCategory};
 export function menuNames(menu){return [...new Set(String(menu??'').split(/[,，\n;；]/).map(norm).filter(Boolean))];}
 export function periodRecords(records,period='all'){return period==='all'?records:records.filter(r=>(period.length===4?String(r.date??'').slice(0,4):String(r.date??'').slice(0,7))===period);}
-function counts(records,labels,denominator=records.length){const m=new Map();for(const r of records)for(const label of labels(r)){m.set(label,(m.get(label)||0)+1);}return [...m].map(([label,count])=>({label,count,percent:denominator?100*count/denominator:0})).sort((a,b)=>b.count-a.count||a.label.localeCompare(b.label,'ko'));}
+function counts(records,labels,denominator=records.length){
+  const groups=new Map();
+  for(const record of records)for(const label of new Set(labels(record))){
+    if(!groups.has(label))groups.set(label,[]);
+    groups.get(label).push(record);
+  }
+  return [...groups].map(([label,visits])=>({label,visits,count:visits.length,percent:denominator?100*visits.length/denominator:0}))
+    .sort((a,b)=>b.count-a.count||a.label.localeCompare(b.label,'ko'));
+}
 export const shopKey=r=>r.shopId||((r.group!==undefined&&r.group!==null)?`shared-shop-${r.group}`:JSON.stringify([norm(String(r.name??'').replaceAll('_',' ')),norm(r.region),norm(r.area),norm(r.address)]));
-export function groupRestaurants(records){const groups=new Map();for(const r of records){const id=shopKey(r);if(!groups.has(id))groups.set(id,[]);groups.get(id).push(r);}return [...groups].map(([id,items])=>{const visits=[...items].sort((a,b)=>String(b.date??'').localeCompare(String(a.date??'')));const latest=visits[0];const dates=visits.map(v=>v.date).filter(Boolean).sort();return {...latest,id,visits,visitCount:visits.length,firstDate:dates[0]||'',date:dates.at(-1)||'',revisit:latest.shopRevisit??latest.revisit,photos:visits.flatMap(v=>v.photos||[])};}).sort((a,b)=>b.date.localeCompare(a.date)||a.name.localeCompare(b.name,'ko'));}
+export function groupRestaurants(records){const groups=new Map();for(const r of records){const id=shopKey(r);if(!groups.has(id))groups.set(id,[]);groups.get(id).push(r);}return [...groups].map(([id,items])=>{const visits=[...items].sort((a,b)=>String(b.date??'').localeCompare(String(a.date??''))||String(a.id).localeCompare(String(b.id)));const latest=visits[0];const dates=visits.map(v=>v.date).filter(Boolean).sort();return {...latest,id,visits,visitCount:visits.length,firstDate:dates[0]||'',date:dates.at(-1)||'',revisit:latest.shopRevisit??latest.revisit,photos:visits.flatMap(v=>v.photos||[])};}).sort((a,b)=>b.date.localeCompare(a.date)||a.name.localeCompare(b.name,'ko'));}
 export function summarize(records){const shops=groupRestaurants(records);const repeat=shops.filter(s=>s.visitCount>1).length;return {visits:records.length,places:shops.length,repeatPlaces:repeat,repeatRate:shops.length?repeat/shops.length*100:0,topPlaces:shops.slice().sort((a,b)=>b.visitCount-a.visitCount||b.date.localeCompare(a.date)||a.name.localeCompare(b.name,'ko')).slice(0,5),regions:new Set(records.map(r=>norm(r.region)).filter(Boolean)).size,revisitYes:records.filter(r=>r.revisit==='또 갈래').length,revisitUnknown:records.filter(r=>!norm(r.revisit)).length,byRegion:counts(records,r=>[norm(r.region)||missing]),byType:counts(records,r=>[norm(r.type)||missing]),byRevisit:counts(records,r=>[norm(r.revisit)||missing]),byYear:counts(records,r=>[norm(r.date).slice(0,4)||missing]).filter(x=>x.label!==missing).sort((a,b)=>b.label.localeCompare(a.label)),byMonth:counts(records,r=>[norm(r.date).slice(0,7)||missing]).filter(x=>x.label!==missing).sort((a,b)=>b.label.localeCompare(a.label)),byMenu:counts(records,r=>menuNames(r.menu)),byMenuCategory:counts(records,r=>[...new Set(r.menuCategories||[])]),byPurchaseCategory:counts(records,r=>[...new Set(r.purchaseCategories||[])]),byPlaceType:counts(records,r=>[placeTypeOf(r)])};}
 const matches=(actual,wanted)=>!wanted||(wanted==='__missing'?!norm(actual):norm(actual)===wanted);
 export function filterRecords(records,{region='',type='',revisit='',query='',menu='',menuCategory='',purchaseCategory='',placeType='',period='all'}={}){const q=norm(query).toLowerCase();return periodRecords(records,period).filter(r=>matches(r.region,region)&&matches(r.type,type)&&matches(r.revisit,revisit)&&(!menu||menuNames(r.menu).includes(menu))&&(!menuCategory||(r.menuCategories||[]).includes(menuCategory))&&(!purchaseCategory||(r.purchaseCategories||[]).includes(purchaseCategory))&&(!placeType||r.placeType===placeType)&&(!q||[r.name,r.region,r.area,r.type,r.menu,r.review,r.purchases,(r.menuCategories||[]).join(' '),(r.purchaseCategories||[]).join(' ')].join(' ').toLowerCase().includes(q)));}
@@ -63,3 +71,20 @@ export function groupPlaces(records,masters=[],wishes=[],extras=[]){const groupe
 export const brandKey=p=>p.brandId?`brand:${p.brandId}`:`place:${p.id||shopKey(p)}`;
 export function groupBrands(places){const groups=new Map();for(const p of places){const k=brandKey(p);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(p);}return [...groups].map(([id,items])=>{const branches=[...items].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||a.name.localeCompare(b.name,'ko'));const latest=branches[0],visits=branches.flatMap(b=>b.visits||[]).sort((a,b)=>(b.date||'').localeCompare(a.date||''));return {...latest,id,name:latest.brandName||latest.name,branches,branchCount:branches.length,visitedBranchCount:branches.filter(b=>b.visitCount>0).length,visitCount:visits.length,visits,photos:branches.flatMap(b=>b.photos||[]),wishes:branches.flatMap(b=>b.wishes||[]),date:visits[0]?.date||'',firstDate:visits.at(-1)?.date||'',area:[...new Set(branches.map(b=>b.area||b.region).filter(Boolean))].join(' · '),revisit:branches.length===1?latest.revisit:undefined,wishlist:branches.some(isWish),status:branches.some(b=>b.status==='방문 예정')?'방문 예정':visits.length?'방문 완료':'가고 싶어요'};}).sort((a,b)=>b.date.localeCompare(a.date)||a.name.localeCompare(b.name,'ko'));}
 export function brandSummary(records){const groups=groupBrands(groupRestaurants(records));return {visitedBrands:groups.length,repeatBrands:groups.filter(g=>g.visitCount>1).length,topBrands:groups.sort((a,b)=>b.visitCount-a.visitCount||a.name.localeCompare(b.name,'ko')).slice(0,5)};}
+
+const searchText=value=>norm(value).normalize('NFKC').toLowerCase();
+export function searchPlace(place,query){
+  const terms=searchText(query).split(/\s+/).filter(Boolean);
+  if(!terms.length)return {matches:true,visits:[]};
+  const placeText=searchText([place.name,place.brandName,place.region,place.area,place.type,place.placeType,place.interest,...(place.wishes??[]).map(wish=>wish.name)].join(' '));
+  const visits=(place.visits??[]).filter(visit=>{
+    const visitText=searchText([visit.menu,visit.purchases,visit.review].join(' '));
+    return terms.every(term=>placeText.includes(term)||visitText.includes(term))&&terms.some(term=>visitText.includes(term));
+  });
+  return {matches:visits.length>0||terms.every(term=>placeText.includes(term)),visits};
+}
+
+export function rankStatPlaces(visits){
+  return groupRestaurants(visits).sort((a,b)=>b.visitCount-a.visitCount||b.date.localeCompare(a.date)
+    ||a.name.localeCompare(b.name,'ko')||a.id.localeCompare(b.id));
+}

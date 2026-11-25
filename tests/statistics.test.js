@@ -47,3 +47,23 @@ test('place masters include zero-visit wishlist and do not inflate visit statist
 test('purchase category drilldown matches only actual shopping visits',()=>{const a=[{name:'shop',placeType:'쇼핑몰',purchaseCategories:['굿즈·캐릭터'],purchases:'키링',date:'2026-11-01'},{name:'shop2',placeType:'맛집',date:'2026-11-02'}];assert.equal(filterRecords(a,{purchaseCategory:'굿즈·캐릭터'}).length,1);assert.equal(summarize(a).byPurchaseCategory[0].count,1);});
 test('brand grouping keeps branch visits, zero-visit wishes and unlinked names separate',async()=>{const {groupBrands,groupPlaces,brandSummary,summarize}=await import('../public/statistics.js');const records=[{id:'v1',shopId:'a',brandId:'h',brandName:'호시노 커피',name:'호시노 사카에점',region:'나고야',date:'2025-03-07'},{id:'v2',shopId:'b',brandId:'h',brandName:'호시노 커피',name:'호시노 타워즈점',region:'나고야',date:'2024-05-31'},{id:'v3',shopId:'a',brandId:'h',brandName:'호시노 커피',name:'호시노 사카에점',region:'나고야',date:'2024-05-30'},{id:'v4',shopId:'x',name:'호시노 커피',date:'2024-01-01'}];const shops=groupPlaces(records,[{id:'c',brandId:'h',brandName:'호시노 커피',name:'미방문 지점',region:'도쿄',wishlist:true}]);const groups=groupBrands(shops),h=groups.find(x=>x.id==='brand:h');assert.equal(groups.length,2);assert.equal(h.branchCount,3);assert.equal(h.visitedBranchCount,2);assert.equal(h.visitCount,3);assert.equal(h.date,'2025-03-07');assert.equal(brandSummary(records).visitedBrands,2);assert.equal(brandSummary(records).repeatBrands,1);assert.equal(summarize(records).repeatPlaces,1);assert.equal(groupBrands(shops.filter(x=>x.region==='도쿄'))[0].visitCount,0);});
 test('different branches of a brand do not count as same-branch revisits',async()=>{const {brandSummary,summarize}=await import('../public/statistics.js');const r=['a','b'].map(shopId=>({shopId,brandId:'h',brandName:'호시노',name:shopId,date:'2025-01-01'}));assert.equal(brandSummary(r).repeatBrands,1);assert.equal(summarize(r).repeatPlaces,0);});
+
+test('normalized search returns intact evidence from the matching visit', async()=>{
+  const {searchPlace}=await import('../public/statistics.js');
+  const place={name:'Cafe',region:'北京',visits:[{id:'new',menu:'Tea'},{id:'old',menu:'抹茶白兰',review:'좋았음'}]};
+  assert.deepEqual(searchPlace(place,'ＣＡＦＥ 抹茶').visits.map(v=>v.id),['old']);
+  assert.equal(searchPlace(place,'Tea 抹茶').matches,false);
+  assert.equal(searchPlace(place,'北京').matches,true);
+});
+
+test('stat rows and place ranking use identical matching visits', async()=>{
+  const {rankStatPlaces}=await import('../public/statistics.js');
+  const rows=[
+    {id:'1',shopId:'a',name:'A',date:'2026-03-01',placeType:'카페',menuCategories:['음료','음료']},
+    {id:'2',shopId:'a',name:'A',date:'2026-04-01',placeType:'카페',menuCategories:['음료']},
+    {id:'3',shopId:'b',name:'B',date:'2026-05-01',placeType:'카페',menuCategories:['음료']},
+  ];
+  const row=summarize(rows).byMenuCategory[0];
+  assert.equal(row.count,3);
+  assert.deepEqual(rankStatPlaces(row.visits).map(p=>[p.id,p.visitCount,p.date]),[['a',2,'2026-04-01'],['b',1,'2026-05-01']]);
+});
