@@ -1,4 +1,5 @@
 import {createHash,createHmac,randomBytes,createCipheriv,createDecipheriv,timingSafeEqual} from 'node:crypto';
+import {loginLimitConfigured,recordLoginAttempt} from '../lib/login-limit.js';
 import {shopKey,operatingLabels,usageLabels} from '../public/statistics.js';
 const DS='4226d8c5-8de1-812a-abad-000b3a03e68e';
 const PHOTO='4226d8c5-8de1-816a-97f2-000b1afe696e';
@@ -10,7 +11,7 @@ const key=()=>createHash('sha256').update(process.env.APP_SECRET||'').digest();
 const sign=s=>createHmac('sha256',key()).update(s).digest('base64url');
 const configured=()=>Boolean(process.env.NOTION_TOKEN);
 const sharingEnabled=()=>Boolean(process.env.APP_SECRET?.length>=32);
-const privateEnabled=()=>Boolean(configured()&&process.env.APP_PASSWORD?.length>=16&&sharingEnabled());
+const privateEnabled=()=>Boolean(configured()&&/^\d{6}$/.test(process.env.APP_PASSWORD??'')&&sharingEnabled()&&loginLimitConfigured());
 export function seal(records,now=Date.now()){const iv=randomBytes(12),c=createCipheriv('aes-256-gcm',key(),iv);const data=Buffer.concat([c.update(JSON.stringify({exp:now+7*86400000,records})),c.final()]);return Buffer.concat([iv,c.getAuthTag(),data]).toString('base64url');}
 export function unseal(token,now=Date.now()){const b=Buffer.from(token,'base64url');const d=createDecipheriv('aes-256-gcm',key(),b.subarray(0,12));d.setAuthTag(b.subarray(12,28));const p=JSON.parse(Buffer.concat([d.update(b.subarray(28)),d.final()]));if(p.exp<now)throw Error('만료된 공유 링크입니다.');return p.records;}
 const safeMap=(value,hosts)=>{try{const u=new URL(value);return u.protocol==='https:'&&hosts.includes(u.hostname)?u.href:'';}catch{return '';}};
@@ -107,7 +108,22 @@ export function clean(r,group){return {group,name:r.name,date:r.date,region:r.re
 export default async function handler(req,res){res.setHeader('Cache-Control','no-store');res.setHeader('Content-Type','application/json; charset=utf-8');const send=(status,obj)=>{res.statusCode=status;res.end(JSON.stringify(obj));};const action=new URL(req.url,'http://localhost').searchParams.get('action');try{
 if(action==='status'&&req.method==='GET')return send(200,{configured:configured(),sharingEnabled:configured()&&sharingEnabled(),privateEnabled:privateEnabled(),authenticated:privateEnabled()&&authorized(req)});
 if(!configured())return send(503,{error:'Notion 및 앱 환경변수가 설정되지 않았습니다.'});
-if(action==='login'&&req.method==='POST'){if(!privateEnabled())return send(404,{error:'비공개 보기가 설정되지 않았습니다.'});const b=await body(req);if(!safeEqual(b.password,process.env.APP_PASSWORD))return send(401,{error:'비밀번호가 올바르지 않습니다.'});const exp=String(Date.now()+86400000);res.setHeader('Set-Cookie',`food_session=${exp}.${sign(exp)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400${process.env.VERCEL?'; Secure':''}`);return send(200,{ok:true});}
+if(action==='login'&&req.method==='POST'){
+  if(!privateEnabled())return send(503,{error:'비공개 보기 설정을 확인해 주세요.'});
+  const input=await body(req);
+  const password=input?.password;
+  const matches=typeof password==='string'&&/^\d{6}$/.test(password)&&safeEqual(password,process.env.APP_PASSWORD);
+  let attempt;
+  try{attempt=await recordLoginAttempt(matches);}catch{return send(503,{error:'로그인 상태를 확인할 수 없습니다. 잠시 후 다시 시도해 주세요.'});}
+  if(attempt.retryAfter){
+    res.setHeader('Retry-After',String(attempt.retryAfter));
+    return send(429,{error:'로그인이 잠겼습니다. '+Math.ceil(attempt.retryAfter/60)+'분 후 다시 시도해 주세요.'});
+  }
+  if(!matches)return send(401,{error:'PIN이 올바르지 않습니다. 남은 시도: '+attempt.remaining+'회'});
+  const exp=String(Date.now()+86400000);
+  res.setHeader('Set-Cookie','food_session='+exp+'.'+sign(exp)+'; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400'+(process.env.VERCEL?'; Secure':''));
+  return send(200,{ok:true});
+}
 if(action==='logout'&&req.method==='POST'){res.setHeader('Set-Cookie','food_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');return send(200,{ok:true});}
 if(action==='shared'&&req.method==='POST'){if(!sharingEnabled())return send(503,{error:'공유 기능이 설정되지 않았습니다.'});try{const {token}=await body(req);if(typeof token!=='string'||token.length>90000)throw Error();return send(200,{records:unseal(token).map(({group,...record})=>clean(record,group))});}catch{return send(400,{error:'유효하지 않거나 만료된 공유 링크입니다.'});}}
 if(action==='records'&&req.method==='GET')return send(200,await archive(privateEnabled()&&authorized(req)));

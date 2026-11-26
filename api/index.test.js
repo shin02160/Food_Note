@@ -45,7 +45,7 @@ test('explicit brand relations attach to branches and visits, conflicts stay unm
 
 test('public archive hides private data while an authenticated private view can read it', async t => {
   const {default:handler}=await import('./index.js');
-  const env={NOTION_TOKEN:'test',APP_PASSWORD:'fixture-long-password'};
+  const env={NOTION_TOKEN:'test',APP_PASSWORD:'034678',UPSTASH_REDIS_REST_URL:'https://redis.example.test',UPSTASH_REDIS_REST_TOKEN:'fixture'};
   for(const [key,value] of Object.entries(env)){
     const previous=process.env[key];
     process.env[key]=value;
@@ -63,8 +63,21 @@ test('public archive hides private data while an authenticated private view can 
     '4226d8c5-8de1-81e8-9ace-000b3415e595':places,
     '4236d8c5-8de1-8160-8c51-000b130b7c7e':[page('wish',{'아이템명':title('Private wish'),'장소':relation('visited')})],
   };
-  let wishQueries=0;
-  t.mock.method(globalThis,'fetch',async url=>{
+  let wishQueries=0,failures=0,locked=false,storageAvailable=true;
+  t.mock.method(globalThis,'fetch',async (url,options)=>{
+    if(url===env.UPSTASH_REDIS_REST_URL){
+      if(!storageAvailable)return Response.json({error:'unavailable'},{status:503});
+      const [command,script,keyCount,key,matches,maxFailures,seconds]=JSON.parse(options.body);
+      assert.equal(command,'EVAL');assert.equal(keyCount,1);
+      assert.match(key,/^place-notes:login:v1:/);
+      assert.equal(script.includes('redis.call("INCR", KEYS[1])'),true);
+      assert.equal(maxFailures,3);assert.equal(seconds,3600);
+      if(locked)return Response.json({result:[3,1200]});
+      if(matches==='1'){failures=0;return Response.json({result:[0,0]});}
+      failures++;
+      if(failures===3)locked=true;
+      return Response.json({result:[failures,locked?seconds:0]});
+    }
     const id=url.split('/').at(-2);
     if(id==='4236d8c5-8de1-8160-8c51-000b130b7c7e')wishQueries++;
     return Response.json({results:data[id]??[],has_more:false});
@@ -96,6 +109,19 @@ test('public archive hides private data while an authenticated private view can 
   const newShare=await call('share',{ids:['visited']});
   assert.equal(newShare.statusCode,200);
   assert.equal(unseal(newShare.payload.token)[0].review,undefined);
+  assert.equal((await call('login',{password:'111111'})).statusCode,401);
+  assert.equal((await call('login',{password:'111111'})).statusCode,401);
+  const third=await call('login',{password:'111111'});
+  assert.equal(third.statusCode,429);
+  assert.equal(third.headers['Retry-After'],'3600');
+  const blocked=await call('login',{password:env.APP_PASSWORD});
+  assert.equal(blocked.statusCode,429);
+  assert.equal(blocked.headers['Retry-After'],'1200');
+  assert.equal(blocked.headers['Set-Cookie'],undefined);
+  storageAvailable=false;
+  const unavailable=await call('login',{password:env.APP_PASSWORD});
+  assert.equal(unavailable.statusCode,503);
+  assert.equal(unavailable.headers['Set-Cookie'],undefined);
 });
 
 test('Notion schema sync maps usage and operating status without inferring dates',async()=>{
