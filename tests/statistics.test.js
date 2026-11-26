@@ -67,3 +67,14 @@ test('stat rows and place ranking use identical matching visits', async()=>{
   assert.equal(row.count,3);
   assert.deepEqual(rankStatPlaces(row.visits).map(p=>[p.id,p.visitCount,p.date]),[['a',2,'2026-04-01'],['b',1,'2026-05-01']]);
 });
+
+test('schema sync assigns every place type to exactly one category', async()=>{
+  const {placeCategory}=await import('../public/statistics.js');
+  const fixture=[['맛집',73],['카페',17],['베이커리',6],['디저트',9],['마트·식료품',2],['관광지',3]];
+  const rows=fixture.flatMap(([placeType,n])=>Array.from({length:n},(_,i)=>({id:placeType+i,shopId:placeType+i,name:placeType,placeType})));
+  const totals=Object.fromEntries(summarize(rows).byPlaceType.map(row=>[row.label,row.count]));
+  assert.deepEqual(totals,{'맛집':73,'카페':32,'관광지':3,'쇼핑':2});
+  assert.equal(placeCategory({type:'카페'}),'미분류');
+  assert.equal(placeCategory({placeType:'기타 장소'}),'기타 장소');
+  assert.equal(placeCategory({placeType:'신규'}),'미분류');
+});

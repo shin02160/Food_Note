@@ -14,7 +14,7 @@ function counts(records,labels,denominator=records.length){
 }
 export const shopKey=r=>r.shopId||((r.group!==undefined&&r.group!==null)?`shared-shop-${r.group}`:JSON.stringify([norm(String(r.name??'').replaceAll('_',' ')),norm(r.region),norm(r.area),norm(r.address)]));
 export function groupRestaurants(records){const groups=new Map();for(const r of records){const id=shopKey(r);if(!groups.has(id))groups.set(id,[]);groups.get(id).push(r);}return [...groups].map(([id,items])=>{const visits=[...items].sort((a,b)=>String(b.date??'').localeCompare(String(a.date??''))||String(a.id).localeCompare(String(b.id)));const latest=visits[0];const dates=visits.map(v=>v.date).filter(Boolean).sort();return {...latest,id,visits,visitCount:visits.length,firstDate:dates[0]||'',date:dates.at(-1)||'',revisit:latest.shopRevisit??latest.revisit,photos:visits.flatMap(v=>v.photos||[])};}).sort((a,b)=>b.date.localeCompare(a.date)||a.name.localeCompare(b.name,'ko'));}
-export function summarize(records){const shops=groupRestaurants(records);const repeat=shops.filter(s=>s.visitCount>1).length;return {visits:records.length,places:shops.length,repeatPlaces:repeat,repeatRate:shops.length?repeat/shops.length*100:0,topPlaces:shops.slice().sort((a,b)=>b.visitCount-a.visitCount||b.date.localeCompare(a.date)||a.name.localeCompare(b.name,'ko')).slice(0,5),regions:new Set(records.map(r=>norm(r.region)).filter(Boolean)).size,revisitYes:records.filter(r=>r.revisit==='또 갈래').length,revisitUnknown:records.filter(r=>!norm(r.revisit)).length,byRegion:counts(records,r=>[norm(r.region)||missing]),byType:counts(records,r=>[norm(r.type)||missing]),byRevisit:counts(records,r=>[norm(r.revisit)||missing]),byYear:counts(records,r=>[norm(r.date).slice(0,4)||missing]).filter(x=>x.label!==missing).sort((a,b)=>b.label.localeCompare(a.label)),byMonth:counts(records,r=>[norm(r.date).slice(0,7)||missing]).filter(x=>x.label!==missing).sort((a,b)=>b.label.localeCompare(a.label)),byMenu:counts(records,r=>menuNames(r.menu)),byMenuCategory:counts(records,r=>[...new Set(r.menuCategories||[])]),byPurchaseCategory:counts(records,r=>[...new Set(r.purchaseCategories||[])]),byPlaceType:counts(records,r=>[placeTypeOf(r)])};}
+export function summarize(records){const shops=groupRestaurants(records);const repeat=shops.filter(s=>s.visitCount>1).length;return {visits:records.length,places:shops.length,repeatPlaces:repeat,repeatRate:shops.length?repeat/shops.length*100:0,topPlaces:shops.slice().sort((a,b)=>b.visitCount-a.visitCount||b.date.localeCompare(a.date)||a.name.localeCompare(b.name,'ko')).slice(0,5),regions:new Set(records.map(r=>norm(r.region)).filter(Boolean)).size,revisitYes:records.filter(r=>r.revisit==='또 갈래').length,revisitUnknown:records.filter(r=>!norm(r.revisit)).length,byRegion:counts(records,r=>[norm(r.region)||missing]),byType:counts(records,r=>[norm(r.type)||missing]),byRevisit:counts(records,r=>[norm(r.revisit)||missing]),byYear:counts(records,r=>[norm(r.date).slice(0,4)||missing]).filter(x=>x.label!==missing).sort((a,b)=>b.label.localeCompare(a.label)),byMonth:counts(records,r=>[norm(r.date).slice(0,7)||missing]).filter(x=>x.label!==missing).sort((a,b)=>b.label.localeCompare(a.label)),byMenu:counts(records,r=>menuNames(r.menu)),byMenuCategory:counts(records,r=>[...new Set(r.menuCategories||[])]),byPurchaseCategory:counts(records,r=>[...new Set(r.purchaseCategories||[])]),byPlaceType:counts(records,r=>[placeCategory(r)])};}
 const matches=(actual,wanted)=>!wanted||(wanted==='__missing'?!norm(actual):norm(actual)===wanted);
 export function filterRecords(records,{region='',type='',revisit='',query='',menu='',menuCategory='',purchaseCategory='',placeType='',period='all'}={}){const q=norm(query).toLowerCase();return periodRecords(records,period).filter(r=>matches(r.region,region)&&matches(r.type,type)&&matches(r.revisit,revisit)&&(!menu||menuNames(r.menu).includes(menu))&&(!menuCategory||(r.menuCategories||[]).includes(menuCategory))&&(!purchaseCategory||(r.purchaseCategories||[]).includes(purchaseCategory))&&(!placeType||r.placeType===placeType)&&(!q||[r.name,r.region,r.area,r.type,r.menu,r.review,r.purchases,(r.menuCategories||[]).join(' '),(r.purchaseCategories||[]).join(' ')].join(' ').toLowerCase().includes(q)));}
 
@@ -61,7 +61,17 @@ export function galleryEntries(records,{region='',type='',period='all'}={}){
 export function favoriteShops(shops){return shops.filter(s=>s.revisit==='또 갈래');}
 
 export const shoppingTypes=['쇼핑몰','소품·굿즈샵','화장품','패션·잡화','마트·식료품'];
-export const placeTypeOf=p=>p.placeType||(['카페','베이커리','디저트'].includes(p.type)?p.type:'맛집');
+export const placeTypeOf=place=>norm(place.placeTypeRaw??place.placeType);
+export const cafeTypes=['카페','베이커리','디저트'];
+export const placeTypes=['맛집',...cafeTypes,...shoppingTypes,'관광지','기타 장소'];
+export function placeCategory(place){
+  const type=placeTypeOf(place);
+  if(cafeTypes.includes(type))return '카페';
+  if(shoppingTypes.includes(type))return '쇼핑';
+  return placeTypes.includes(type)?type:'미분류';
+}
+export const operatingLabels=Object.freeze({open:'영업 중',temporarilyClosed:'휴업',closed:'폐업',unknown:'미확인'});
+export const usageLabels=Object.freeze({onsite:'매장 방문',takeout:'포장',delivery:'배달',online:'온라인 구매',unknown:'미확인'});
 export const isShopping=p=>shoppingTypes.includes(placeTypeOf(p));
 export function placeStatus(p,today=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Seoul'})){return p.plannedDate&&p.plannedDate>=today?'방문 예정':p.visitCount>0?'방문 완료':'가고 싶어요';}
 export const isWish=p=>!!p.wishlist||p.visitCount===0||placeStatus(p)==='방문 예정';

@@ -1,5 +1,5 @@
 import {createHash,createHmac,randomBytes,createCipheriv,createDecipheriv,timingSafeEqual} from 'node:crypto';
-import {shopKey} from '../public/statistics.js';
+import {shopKey,operatingLabels,usageLabels} from '../public/statistics.js';
 const DS='4226d8c5-8de1-812a-abad-000b3a03e68e';
 const PHOTO='4226d8c5-8de1-816a-97f2-000b1afe696e';
 const WISH='4236d8c5-8de1-8160-8c51-000b130b7c7e';
@@ -31,14 +31,31 @@ function naverPlaceUrl(value){
   return '';
 }
 const txt=p=>(p?.rich_text??p?.title??[]).map(x=>x.plain_text??x.text?.content??'').join('');
-export function normalize(page){const p=page.properties??{};return {id:page.id,shopId:p['식당']?.relation?.[0]?.id??'',name:txt(p['상호명']),date:p['방문 날짜']?.date?.start?.slice(0,10)??'',region:p['지역']?.select?.name??'',area:txt(p['세부 지역']),type:p['음식 종류']?.select?.name??'',menu:txt(p['주문 메뉴']),menuCategories:(p['메뉴 카테고리']?.multi_select??[]).map(x=>x.name),purchases:txt(p['구매품']),purchaseCategories:(p['구매 카테고리']?.multi_select??[]).map(x=>x.name),placeType:p['장소 유형']?.select?.name??'',review:txt(p['간단 후기']),revisit:p['재방문 의사']?.select?.name??'',address:txt(p['주소']),naverMap:safeMap(p['네이버 지도']?.url,['map.naver.com','naver.me']),naverPlace:naverPlaceUrl(p['네이버 지도']?.url),googleMap:safeMap(p['Google Maps']?.url,['www.google.com','maps.google.com','maps.app.goo.gl']),photos:(p['사진']?.files??[]).map((f,i)=>({index:i,name:f.name??'',url:f.file?.url??f.external?.url??''})).filter(f=>f.url.startsWith('https://'))};}
+const selectName=property=>{
+  const value=typeof property==='string'?property:property?.select?.name;
+  return typeof value==='string'?value.trim()||null:null;
+};
+const optionValue=(labels,raw)=>Object.keys(labels).find(key=>labels[key]===raw)??'unknown';
+function checkedDate(value){
+  if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}(?:T|$)/.test(value)||!Number.isFinite(Date.parse(value)))return null;
+  const date=value.slice(0,10);
+  return new Date(date+'T00:00:00Z').toISOString().slice(0,10)===date?date:null;
+}
+function operatingFields(properties){
+  const operatingStatusRaw=selectName(properties['영업 상태']);
+  const operatingStatusCheckedAtRaw=properties['영업 상태 확인일']?.date?.start??null;
+  return {operatingStatusRaw,operatingStatus:optionValue(operatingLabels,operatingStatusRaw),
+    operatingStatusCheckedAtRaw,operatingStatusCheckedAt:checkedDate(operatingStatusCheckedAtRaw),
+    operatingStatusFieldPresent:Object.hasOwn(properties,'영업 상태'),
+    operatingStatusDateFieldPresent:Object.hasOwn(properties,'영업 상태 확인일')};
+}
+export function normalize(page){const p=page.properties??{},usageModeRaw=selectName(p['이용 방식']);return {id:page.id,usageModeRaw,usageMode:optionValue(usageLabels,usageModeRaw),usageModeFieldPresent:Object.hasOwn(p,'이용 방식'),shopId:p['식당']?.relation?.[0]?.id??'',name:txt(p['상호명']),date:p['방문 날짜']?.date?.start?.slice(0,10)??'',region:p['지역']?.select?.name??'',area:txt(p['세부 지역']),type:p['음식 종류']?.select?.name??'',menu:txt(p['주문 메뉴']),menuCategories:(p['메뉴 카테고리']?.multi_select??[]).map(x=>x.name),purchases:txt(p['구매품']),purchaseCategories:(p['구매 카테고리']?.multi_select??[]).map(x=>x.name),placeTypeRaw:selectName(p['장소 유형']),placeType:selectName(p['장소 유형'])??'',placeTypeFieldPresent:Object.hasOwn(p,'장소 유형'),review:txt(p['간단 후기']),revisit:p['재방문 의사']?.select?.name??'',address:txt(p['주소']),naverMap:safeMap(p['네이버 지도']?.url,['map.naver.com','naver.me']),naverPlace:naverPlaceUrl(p['네이버 지도']?.url),googleMap:safeMap(p['Google Maps']?.url,['www.google.com','maps.google.com','maps.app.goo.gl']),photos:(p['사진']?.files??[]).map((f,i)=>({index:i,name:f.name??'',url:f.file?.url??f.external?.url??''})).filter(f=>f.url.startsWith('https://'))};}
 async function notion(path,body){const r=await fetch('https://api.notion.com/v1/'+path,{method:'POST',headers:{Authorization:`Bearer ${process.env.NOTION_TOKEN}`,'Notion-Version':'2025-09-03','Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw Error(`Notion 조회 실패 (${r.status})`);return r.json();}
 async function queryAll(ds,sorts){let cursor,all=[];do{const p=await notion(`data_sources/${ds}/query`,{page_size:100,...(sorts?{sorts}:{}),...(cursor?{start_cursor:cursor}:{})});all.push(...p.results.filter(x=>x.object==='page'&&!x.archived&&!x.in_trash));cursor=p.has_more?p.next_cursor:null;}while(cursor);return all;}
-export function joinVisits(visits,masters){const shops=new Map(masters.map(p=>[p.id,normalize(p)]));return visits.map(p=>{const v=normalize(p),m=shops.get(v.shopId);if((p.properties?.['식당']?.relation??[]).length!==1||!m)throw Error('Notion 조회 실패: 방문 이력의 식당 연결을 확인하세요.');return {...v,name:m.name,region:m.region,area:m.area,type:m.type,address:m.address,naverMap:m.naverMap,naverPlace:m.naverPlace,googleMap:m.googleMap,shopRevisit:m.revisit,placeType:placeKind(m)};});}
-const placeKind=m=>m.placeType||(['카페','베이커리','디저트'].includes(m.type)?m.type:'맛집');
+export function joinVisits(visits,masters){const shops=new Map(masters.map(p=>[p.id,normalize(p)]));return visits.map(p=>{const v=normalize(p),m=shops.get(v.shopId);if((p.properties?.['식당']?.relation??[]).length!==1||!m)throw Error('Notion 조회 실패: 방문 이력의 식당 연결을 확인하세요.');return {...v,name:m.name,region:m.region,area:m.area,type:m.type,address:m.address,naverMap:m.naverMap,naverPlace:m.naverPlace,googleMap:m.googleMap,shopRevisit:m.revisit,placeType:m.placeType,placeTypeRaw:m.placeTypeRaw,placeTypeFieldPresent:m.placeTypeFieldPresent};});}
 const relation=(p,k)=>(p[k]?.relation??[]).map(x=>x.id);
 const https=value=>{try{const u=new URL(value);return u.protocol==='https:'?u.href:''}catch{return ''}};
-export function normalizePlace(page){const p=page.properties??{},m=normalize(page);return {...m,shopId:page.id,placeType:placeKind(m),wishlist:!!p['위시리스트']?.checkbox,plannedDate:p['방문 예정일']?.date?.start?.slice(0,10)??'',interest:txt(p['추천·관심 정보']),reference:https(p['참고 링크']?.url),travelIds:relation(p,'여행 계획'),checklistIds:relation(p,'여행 체크리스트'),visitCount:p['방문 이력']?.relation?.length??0};}
+export function normalizePlace(page){const p=page.properties??{},m=normalize(page);return {...m,...operatingFields(p),shopId:page.id,wishlist:!!p['위시리스트']?.checkbox,plannedDate:p['방문 예정일']?.date?.start?.slice(0,10)??'',interest:txt(p['추천·관심 정보']),reference:https(p['참고 링크']?.url),travelIds:relation(p,'여행 계획'),checklistIds:relation(p,'여행 체크리스트'),visitCount:p['방문 이력']?.relation?.length??0};}
 export function normalizeBrand(page){const p=page.properties??{};return {id:page.id,name:txt(p['브랜드명']),placeIds:relation(p,'지점')};}
 export function attachBrands(places,records,brandPages){const byPlace=new Map(),conflicts=new Set();for(const b of brandPages.map(normalizeBrand)){if(!b.name)continue;for(const id of b.placeIds){if(byPlace.has(id)&&byPlace.get(id).id!==b.id)conflicts.add(id);else byPlace.set(id,b);}}for(const id of conflicts)byPlace.delete(id);for(const p of [...places,...records]){const b=byPlace.get(p.shopId||p.id);if(b){p.brandId=b.id;p.brandName=b.name;}}return conflicts.size;}
 export function normalizeWish(page){const p=page.properties??{};return {id:page.id,shopId:relation(p,'장소')[0]??'',name:txt(p['아이템명']),kind:p['유형']?.select?.name??'',status:p['상태']?.select?.name??'',note:txt(p['메모']),reference:https(p['참고 링크']?.url),travelIds:relation(p,'여행 계획'),checklistIds:relation(p,'여행 체크리스트'),photos:(p['상품 사진']?.files??[]).map(f=>({url:https(f.file?.url??f.external?.url),name:f.name??''})).filter(f=>f.url)};}
@@ -48,9 +65,10 @@ if(photo&&p['대표 사진']?.checkbox)choices.push({shopId,photo,order,visitDat
 choices.sort((a,b)=>b.visitDate.localeCompare(a.visitDate)||a.order-b.order||a.id.localeCompare(b.id));const chosen=new Set();for(const c of choices)if(!chosen.has(c.shopId)){byPlace.get(c.shopId).cover=c.photo;chosen.add(c.shopId);}return extras;}
 async function archive(includePrivate){
   const warnings=[];
+  let partial=false;
   const optional=async(id,label)=>{
     try{return await queryAll(id);}
-    catch{warnings.push(label+' DB 연결 상태를 확인해 주세요.');return [];}
+    catch{partial=true;warnings.push(label+' DB 연결 상태를 확인해 주세요.');return [];}
   };
   const [visits,masters,photos,wishes,brands]=await Promise.all([
     queryAll(process.env.NOTION_VISIT_DATA_SOURCE_ID||process.env.NOTION_DATA_SOURCE_ID||DS,[{property:'방문 날짜',direction:'descending'}]),
@@ -80,7 +98,7 @@ async function archive(includePrivate){
   });
   const extraPhotos=resolvePhotos(photoPages,rows,places);
   if(attachBrands(places,rows,brands))warnings.push('중복 브랜드 관계가 있는 지점은 지점별로 표시합니다.');
-  return {records:rows,places,wishes:wishes.map(normalizeWish),extraPhotos,warnings,warning:warnings.join(" · ")};
+  return {records:rows,places,wishes:wishes.map(normalizeWish),extraPhotos,partial,warnings,warning:warnings.join(" · ")};
 }
 function authorized(req){const raw=(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('food_session='))?.slice(13)||'';const [exp,sig]=raw.split('.');return !!sig&&Number(exp)>Date.now()&&safeEqual(sig,sign(exp));}
 async function body(req){if(req.body&&typeof req.body==='object')return req.body;if(typeof req.body==='string')return JSON.parse(req.body);let s='';for await(const chunk of req){s+=chunk;if(s.length>100000)throw Error('요청이 너무 큽니다.');}return JSON.parse(s||'{}');}

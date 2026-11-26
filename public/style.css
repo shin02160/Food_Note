@@ -196,3 +196,6 @@ body{font-family:var(--body);font-size:15px;line-height:1.65}h1,h2,h3,.card h3,.
   overflow: hidden;
   overflow-wrap: anywhere;
 }
+
+.usage-label { display: block; margin-top: 3px; color: var(--muted); font-size: 13px; }
+.operating-status { background: var(--cream); color: var(--ink); }

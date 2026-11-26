@@ -89,3 +89,19 @@ test('public archive hides private data while an authenticated private view can 
   assert.deepEqual(authenticated.payload.places[0].travelIds,['trip']);
   assert.equal(authenticated.payload.wishes[0].name,'Private wish');
 });
+
+test('Notion schema sync maps usage and operating status without inferring dates',async()=>{
+  const {normalizePlace,joinVisits}=await import('./index.js');
+  const select=name=>({select:{name}});
+  const master={id:'p',properties:{'장소 유형':select('관광지'),'영업 상태':select('폐업'),'영업 상태 확인일':{date:{start:'2026-11-18T23:00:00-05:00'}},'재방문 의사':select('또 갈래')}};
+  const place=normalizePlace(master);
+  assert.equal(place.operatingStatus,'closed');
+  assert.equal(place.operatingStatusCheckedAt,'2026-11-18');
+  assert.equal(normalizePlace({properties:{'영업 상태 확인일':{date:{start:'2026-02-30'}}}}).operatingStatusCheckedAt,null);
+  assert.equal(normalizePlace({properties:{'영업 상태':select('그 외')}}).operatingStatusRaw,'그 외');
+  assert.equal(normalizePlace({}).operatingStatus,'unknown');
+  const modes=[['매장 방문','onsite'],['포장','takeout'],['배달','delivery'],['온라인 구매','online'],['미확인','unknown'],['다른 방식','unknown']];
+  for(const [raw,mode] of modes)assert.equal(normalize({properties:{'이용 방식':select(raw)}}).usageMode,mode);
+  const [visit]=joinVisits([{id:'v',properties:{'식당':{relation:[{id:'p'}]},'이용 방식':select('배달'),'재방문 의사':select('보통'),'구매품':{rich_text:[{plain_text:'망고'}]}}}],[master]);
+  assert.deepEqual([visit.usageMode,visit.placeType,visit.shopRevisit,visit.revisit,visit.menu,visit.purchases],['delivery','관광지','또 갈래','보통','','망고']);
+});
