@@ -222,3 +222,66 @@ body{font-family:var(--body);font-size:15px;line-height:1.65}h1,h2,h3,.card h3,.
   gap: 10px;
 }
 #clearGalleryFilters { min-height: 44px; }
+
+/* Detail sizing and share selection across narrow WebKit viewports. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+.detail-active main, #detailPage, #detailContent,
+.detail-hero, .detail-section, .brand-branch { min-width: 0; max-width: 100%; }
+.detail-active main { width: 100%; }
+.detail-top {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 8px;
+}
+.detail-actions { min-width: 0; }
+.detail-top button { max-width: 100%; white-space: normal; }
+.detail-identity { display: flex; align-items: flex-start; gap: 12px; }
+.detail-title { min-width: 0; }
+.detail-identity .detail-emblem { flex: 0 0 44px; width: 44px; height: 44px; margin: 0; }
+.detail-title h1 { margin: 3px 0; }
+.detail-title .detail-location { margin: 0; }
+.detail-cover { margin: 14px 0; }
+#detailContent .detail-cover .photo { display: block; margin: 0; max-width: 100%; }
+.detail-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.place-interest { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+.place-interest h3 { margin: 0 0 5px; font-size: 15px; }
+.detail-status-chips { margin-top: 10px; gap: 8px; }
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font: 600 13px/1.4 var(--body);
+}
+.status-visited { color: #174a32; background: #d9f1e3; border-color: #83b79b; }
+.status-planned { color: #553778; background: #eee3fb; border-color: #b39bcf; }
+.status-unvisited, .revisit-neutral { color: #3e3948; background: #f5f2f7; border-color: #b7acbf; }
+.revisit-yes { color: #742447; background: #fbe4ee; border-color: #cb90a9; }
+.revisit-no { color: #842721; background: #fce6df; border-color: #cc9588; }
+
+.cards .share-selectable { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+.cards:not(.list) .share-selectable { grid-template-columns: minmax(0, 1fr); }
+.cards .share-selectable .record-link { padding-right: 10px; min-width: 0; }
+.cards .share-selectable .chevron { display: none; }
+.cards .share-selectable .choose {
+  position: static;
+  transform: none;
+  place-self: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0 8px 0 0;
+  box-shadow: none;
+}
+.cards:not(.list) .share-selectable .choose { margin: 4px 8px 8px; justify-self: end; }
+
+@media (max-width: 600px) {
+  .detail-active main {
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+  }
+  .detail-hero, .detail-section { padding: 15px; }
+  .detail-top button { padding-inline: 10px; }
+  .detail-title h1 { font-size: clamp(23px, 6vw, 28px); }
+}
