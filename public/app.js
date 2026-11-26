@@ -1,4 +1,4 @@
-import {normalizeCategory,restaurantRegion,groupRegionCards,summarize,periodRecords,galleryEntries,favoriteShops,groupPlaces,isWish,isShopping,groupBrands,brandSummary,searchPlace,rankStatPlaces,placeCategory,operatingLabels,usageLabels} from './statistics.js';
+import {normalizeCategory,restaurantRegion,groupRegionCards,summarize,periodRecords,galleryEntries,favoriteShops,groupPlaces,isWish,isShopping,groupBrands,brandSummary,searchPlace,rankStatPlaces,placeCategory,operatingLabels,usageLabels,isOverseasRegion} from './statistics.js';
 const $=id=>document.getElementById(id);const el=(tag,text,cls)=>{const e=document.createElement(tag);if(text!=null)e.textContent=text;if(cls)e.className=cls;return e};
 let lastCompleteAt=null;
 let loading=false,sharingEnabled=false,privateView=false,selectedRegion='',shareIds=[];
@@ -28,6 +28,7 @@ let currentRecord=null,photoIndex=0,returnScroll=0,hasDetailHistory=false,ready=
 const route=()=>new URLSearchParams(location.hash.slice(1));
 function routeUrl(id){const p=route();if(id)p.set('record',id);else p.delete('record');return p.size?'#'+p.toString():location.href.split('#')[0];}
 function naverRestaurantLink(record){
+  if(isOverseasRegion(record.region))return ['', ''];
   if(record.naverPlace)return ['네이버 플레이스',record.naverPlace];
   const name=record.name?.trim();
   if(!name)return ['네이버에서 식당 검색',''];

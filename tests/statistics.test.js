@@ -90,3 +90,9 @@ test('overseas cards use country.city for registered city options and sort count
   const counts=new Map(['미국.뉴욕','중국.베이징','대만.타이베이','일본.도쿄'].map(region=>[region,1]));
   assert.deepEqual(groupRegionCards(counts)[0].items.map(item=>item.region),['일본.도쿄','대만.타이베이','중국.베이징','미국.뉴욕']);
 });
+
+test('overseas detection matches the region card grouping',async()=>{
+  const {isOverseasRegion}=await import('../public/statistics.js');
+  for(const region of ['도쿄','일본.도쿄','대만.타이베이','베이징','미국'])assert.equal(isOverseasRegion(region),true);
+  for(const region of ['서울','서울.영등포구','부산','지역 미입력',''])assert.equal(isOverseasRegion(region),false);
+});
