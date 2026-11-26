@@ -89,7 +89,7 @@ async function archive(includePrivate){
   const places=masters.filter(page=>includePrivate||visitedIds.has(page.id)).map(page=>{
     const place=normalizePlace(page);
     if(includePrivate)return place;
-    const {wishlist,plannedDate,interest,reference,travelIds,checklistIds,photos,...publicPlace}=place;
+    const {wishlist,plannedDate,reference,travelIds,checklistIds,photos,review,...publicPlace}=place;
     return publicPlace;
   });
   const photoPages=includePrivate?photos:photos.filter(page=>{
@@ -98,17 +98,18 @@ async function archive(includePrivate){
   });
   const extraPhotos=resolvePhotos(photoPages,rows,places);
   if(attachBrands(places,rows,brands))warnings.push('중복 브랜드 관계가 있는 지점은 지점별로 표시합니다.');
-  return {records:rows,places,wishes:wishes.map(normalizeWish),extraPhotos,partial,warnings,warning:warnings.join(" · ")};
+  const records=includePrivate?rows:rows.map(({review,...record})=>record);
+  return {records,places,authenticated:includePrivate,privateEnabled:privateEnabled(),wishes:wishes.map(normalizeWish),extraPhotos,partial,warnings,warning:warnings.join(" · ")};
 }
 function authorized(req){const raw=(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('food_session='))?.slice(13)||'';const [exp,sig]=raw.split('.');return !!sig&&Number(exp)>Date.now()&&safeEqual(sig,sign(exp));}
 async function body(req){if(req.body&&typeof req.body==='object')return req.body;if(typeof req.body==='string')return JSON.parse(req.body);let s='';for await(const chunk of req){s+=chunk;if(s.length>100000)throw Error('요청이 너무 큽니다.');}return JSON.parse(s||'{}');}
-export function clean(r,group){return {group,name:r.name,date:r.date,region:r.region,area:r.area,type:r.type,placeType:r.placeType,menu:r.menu,menuCategories:r.menuCategories,purchases:r.purchases,purchaseCategories:r.purchaseCategories,review:r.review,revisit:r.revisit,};}
+export function clean(r,group){return {group,name:r.name,date:r.date,region:r.region,area:r.area,type:r.type,placeType:r.placeType,menu:r.menu,menuCategories:r.menuCategories,purchases:r.purchases,purchaseCategories:r.purchaseCategories,revisit:r.revisit,};}
 export default async function handler(req,res){res.setHeader('Cache-Control','no-store');res.setHeader('Content-Type','application/json; charset=utf-8');const send=(status,obj)=>{res.statusCode=status;res.end(JSON.stringify(obj));};const action=new URL(req.url,'http://localhost').searchParams.get('action');try{
 if(action==='status'&&req.method==='GET')return send(200,{configured:configured(),sharingEnabled:configured()&&sharingEnabled(),privateEnabled:privateEnabled(),authenticated:privateEnabled()&&authorized(req)});
 if(!configured())return send(503,{error:'Notion 및 앱 환경변수가 설정되지 않았습니다.'});
 if(action==='login'&&req.method==='POST'){if(!privateEnabled())return send(404,{error:'비공개 보기가 설정되지 않았습니다.'});const b=await body(req);if(!safeEqual(b.password,process.env.APP_PASSWORD))return send(401,{error:'비밀번호가 올바르지 않습니다.'});const exp=String(Date.now()+86400000);res.setHeader('Set-Cookie',`food_session=${exp}.${sign(exp)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400${process.env.VERCEL?'; Secure':''}`);return send(200,{ok:true});}
 if(action==='logout'&&req.method==='POST'){res.setHeader('Set-Cookie','food_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');return send(200,{ok:true});}
-if(action==='shared'&&req.method==='POST'){if(!sharingEnabled())return send(503,{error:'공유 기능이 설정되지 않았습니다.'});try{const {token}=await body(req);if(typeof token!=='string'||token.length>90000)throw Error();return send(200,{records:unseal(token)});}catch{return send(400,{error:'유효하지 않거나 만료된 공유 링크입니다.'});}}
+if(action==='shared'&&req.method==='POST'){if(!sharingEnabled())return send(503,{error:'공유 기능이 설정되지 않았습니다.'});try{const {token}=await body(req);if(typeof token!=='string'||token.length>90000)throw Error();return send(200,{records:unseal(token).map(({group,...record})=>clean(record,group))});}catch{return send(400,{error:'유효하지 않거나 만료된 공유 링크입니다.'});}}
 if(action==='records'&&req.method==='GET')return send(200,await archive(privateEnabled()&&authorized(req)));
 if(action==='share'&&req.method==='POST'){const {ids}=await body(req);if(!Array.isArray(ids)||ids.length<1||ids.length>10||ids.some(x=>typeof x!=='string'))return send(400,{error:'1~10개 기록을 선택하세요.'});if(!sharingEnabled())return send(503,{error:'공유 기능이 설정되지 않았습니다.'});const {records:all}=await archive(false);const unique=[...new Set(ids)];const selected=all.filter(r=>unique.includes(shopKey(r))).map(r=>clean(r,unique.indexOf(shopKey(r))));if(new Set(selected.map(r=>r.group)).size!==unique.length)return send(404,{error:'일부 기록을 찾을 수 없습니다.'});const token=seal(selected);if(token.length>24000)return send(400,{error:'공유 내용이 너무 깁니다. 선택 수를 줄여주세요.'});return send(200,{token});}
 return send(404,{error:'요청을 찾을 수 없습니다.'});}catch(e){return send(502,{error:e.message.startsWith('Notion 조회 실패')?e.message:'요청 처리에 실패했습니다.'});}}

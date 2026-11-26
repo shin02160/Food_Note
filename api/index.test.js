@@ -55,11 +55,11 @@ test('public archive hides private data while an authenticated private view can 
   const title=text=>({title:[{plain_text:text}]});
   const relation=id=>({relation:[{id}]});
   const places=[
-    page('visited',{'상호명':title('Visited'),'위시리스트':{checkbox:true},'여행 계획':relation('trip')}),
+    page('visited',{'상호명':title('Visited'),'추천·관심 정보':{rich_text:[{plain_text:'Public recommendation'}]},'위시리스트':{checkbox:true},'여행 계획':relation('trip')}),
     page('unvisited',{'상호명':title('Unvisited')}),
   ];
   const data={
-    '4226d8c5-8de1-812a-abad-000b3a03e68e':[page('visit',{'식당':relation('visited')})],
+    '4226d8c5-8de1-812a-abad-000b3a03e68e':[page('visit',{'식당':relation('visited'),'간단 후기':{rich_text:[{plain_text:'Private review'}]}})],
     '4226d8c5-8de1-81e8-9ace-000b3415e595':places,
     '4236d8c5-8de1-8160-8c51-000b130b7c7e':[page('wish',{'아이템명':title('Private wish'),'장소':relation('visited')})],
   };
@@ -82,12 +82,20 @@ test('public archive hides private data while an authenticated private view can 
   assert.equal(publicView.payload.places[0].travelIds,undefined);
   assert.equal(publicView.payload.places[0].wishlist,undefined);
   assert.deepEqual(publicView.payload.wishes,[]);
+  assert.equal(publicView.payload.places[0].interest,'Public recommendation');
+  assert.equal(publicView.payload.records[0].review,undefined);
+  const oldToken=seal([{name:'Visited',review:'Private review'}]);
+  assert.equal((await call('shared',{token:oldToken})).payload.records[0].review,undefined);
   const login=await call('login',{password:env.APP_PASSWORD});
   assert.equal(login.statusCode,200);
   const authenticated=await call('records',undefined,login.headers['Set-Cookie'].split(';')[0]);
   assert.deepEqual(authenticated.payload.places.map(p=>p.id),['visited','unvisited']);
   assert.deepEqual(authenticated.payload.places[0].travelIds,['trip']);
   assert.equal(authenticated.payload.wishes[0].name,'Private wish');
+  assert.equal(authenticated.payload.records[0].review,'Private review');
+  const newShare=await call('share',{ids:['visited']});
+  assert.equal(newShare.statusCode,200);
+  assert.equal(unseal(newShare.payload.token)[0].review,undefined);
 });
 
 test('Notion schema sync maps usage and operating status without inferring dates',async()=>{
