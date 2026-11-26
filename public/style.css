@@ -199,3 +199,17 @@ body{font-family:var(--body);font-size:15px;line-height:1.65}h1,h2,h3,.card h3,.
 
 .usage-label { display: block; margin-top: 3px; color: var(--muted); font-size: 13px; }
 .operating-status { background: var(--cream); color: var(--ink); }
+
+@media (min-width: 768px) {
+  .region-choices {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 224px));
+    justify-content: start;
+  }
+}
+
+@media (max-width: 600px) {
+  .kind-chip,
+  #refresh { min-height: 44px; }
+
+  #archiveTabs button { font-size: 12px; }
+}
