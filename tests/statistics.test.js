@@ -81,3 +81,12 @@ test('schema sync assigns every place type to exactly one category', async()=>{
   assert.equal(placeCategory({placeType:'기타 장소'}),'기타 장소');
   assert.equal(placeCategory({placeType:'신규'}),'미분류');
 });
+
+test('overseas cards use country.city for registered city options and sort countries first',async()=>{
+  const {restaurantRegion,groupRegionCards}=await import('../public/statistics.js');
+  const labels=['도쿄','요코하마','나고야','기후','후쿠오카','타이베이','이란','샤먼','베이징','미국.뉴욕'].map(region=>restaurantRegion({region}));
+  assert.deepEqual(labels,['일본.도쿄','일본.요코하마','일본.나고야','일본.기후','일본.후쿠오카','대만.타이베이','대만.이란','중국.샤먼','중국.베이징','미국.뉴욕']);
+  assert.equal(restaurantRegion({region:'Taiwan · 타이베이'}),'대만.타이베이');
+  const counts=new Map(['미국.뉴욕','중국.베이징','대만.타이베이','일본.도쿄'].map(region=>[region,1]));
+  assert.deepEqual(groupRegionCards(counts)[0].items.map(item=>item.region),['일본.도쿄','대만.타이베이','중국.베이징','미국.뉴욕']);
+});

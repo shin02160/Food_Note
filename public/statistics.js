@@ -20,9 +20,27 @@ export function filterRecords(records,{region='',type='',revisit='',query='',men
 
 // Gallery entries keep the exact visit and shop identity, even across repeat visits.
 const seoulDistricts=new Set('강남 강동 강북 강서 관악 광진 구로 금천 노원 도봉 동대문 동작 마포 서대문 서초 성동 성북 송파 양천 영등포 용산 은평 종로 중 중랑'.split(' '));
+const overseasCountries=[
+  {name:'일본',aliases:/^(일본|日本|Japan|JP)$/i,cities:['도쿄','요코하마','나고야','기후','후쿠오카']},
+  {name:'대만',aliases:/^(대만|타이완|臺灣|台灣|Taiwan|TW)$/i,cities:['타이베이','이란']},
+  {name:'중국',aliases:/^(중국|中國|中国|China|CN)$/i,cities:['샤먼','베이징']},
+];
+function overseasRegion(region,area){
+  const [prefix,...parts]=region.split(/[.·\s]+/);
+  const country=overseasCountries.find(item=>item.aliases.test(prefix));
+  if(country){
+    const city=parts.join(' ')||(country.cities.includes(area)?area:'');
+    return city?country.name+'.'+city:country.name;
+  }
+  const cityCountry=overseasCountries.find(item=>item.cities.includes(region));
+  if(cityCountry)return cityCountry.name+'.'+region;
+  return region.replace(/\s*[.·]\s*/g,'.');
+}
+
 export function restaurantRegion(restaurant){
   const region=norm(restaurant.region);
-  if(!/^서울(?:특별시|시)?$/.test(region))return region||'지역 미입력';
+  if(!region)return '지역 미입력';
+  if(!/^서울(?:특별시|시)?$/.test(region))return domesticRegions.test(region)?region:overseasRegion(region,norm(restaurant.area));
   const area=norm(restaurant.area).replace(/^서울(?:특별시|시)?[\s.·]+/,'');
   const first=area.split(/[\s.·]+/)[0].replace(/구$/,'');
   const addressDistrict=norm(restaurant.address).match(/^서울(?:특별시|시)?\s+([^\s]+)구(?:\s|$)/)?.[1];
@@ -32,13 +50,19 @@ export function restaurantRegion(restaurant){
 
 const domesticRegions=/^(국내|한국|대한민국|서울(?:특별시|시)?|경기(?:도)?|인천(?:광역시)?|부산(?:광역시)?|대구(?:광역시)?|대전(?:광역시)?|광주(?:광역시)?|울산(?:광역시)?|세종(?:특별자치시)?|강원(?:도|특별자치도)?|충청[남북]도?|전라[남북]도?|경상[남북]도?|전북특별자치도|충[남북]|전[남북]|경[남북]|충청|전라|경상|제주(?:도|특별자치도)?)(?:[.·\s]|$)/;
 
+function countryPriority(region){
+  const country=region.split(/[.·\s]+/)[0];
+  const priority=overseasCountries.findIndex(item=>item.aliases.test(country));
+  return priority<0?overseasCountries.length:priority;
+}
+
 export function groupRegionCards(counts){
   const groups=['국내','해외','지역 미입력'].map(label=>({label,items:[]}));
   for(const [region,count] of counts){
     const group=region==='지역 미입력'?2:domesticRegions.test(region)?0:1;
     const priority=group===0
       ? /^서울(?:[.·\s]|$)/.test(region)?0:/^경기(?:도)?(?:[.·\s]|$)/.test(region)?1:2
-      : /^(일본|日本|Japan|JP)(?:[.·\s]|$)/i.test(region)?0:/^(대만|타이완|臺灣|台灣|Taiwan|TW)(?:[.·\s]|$)/i.test(region)?1:2;
+      : countryPriority(region);
     groups[group].items.push({region,count,priority});
   }
   for(const group of groups){
