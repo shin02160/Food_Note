@@ -19,12 +19,15 @@ const matches=(actual,wanted)=>!wanted||(wanted==='__missing'?!norm(actual):norm
 export function filterRecords(records,{region='',type='',revisit='',query='',menu='',menuCategory='',purchaseCategory='',placeType='',period='all'}={}){const q=norm(query).toLowerCase();return periodRecords(records,period).filter(r=>matches(r.region,region)&&matches(r.type,type)&&matches(r.revisit,revisit)&&(!menu||menuNames(r.menu).includes(menu))&&(!menuCategory||(r.menuCategories||[]).includes(menuCategory))&&(!purchaseCategory||(r.purchaseCategories||[]).includes(purchaseCategory))&&(!placeType||r.placeType===placeType)&&(!q||[r.name,r.region,r.area,r.type,r.menu,r.review,r.purchases,(r.menuCategories||[]).join(' '),(r.purchaseCategories||[]).join(' ')].join(' ').toLowerCase().includes(q)));}
 
 // Gallery entries keep the exact visit and shop identity, even across repeat visits.
+const seoulDistricts=new Set('강남 강동 강북 강서 관악 광진 구로 금천 노원 도봉 동대문 동작 마포 서대문 서초 성동 성북 송파 양천 영등포 용산 은평 종로 중 중랑'.split(' '));
 export function restaurantRegion(restaurant){
   const region=norm(restaurant.region);
   if(!/^서울(?:특별시|시)?$/.test(region))return region||'지역 미입력';
   const area=norm(restaurant.area).replace(/^서울(?:특별시|시)?[\s.·]+/,'');
-  const district=area.match(/^([^\s.·]+?)구(?:[\s.·]|$)/)?.[1]||area;
-  return '서울.'+(district||'세부 지역 미입력');
+  const first=area.split(/[\s.·]+/)[0].replace(/구$/,'');
+  const addressDistrict=norm(restaurant.address).match(/^서울(?:특별시|시)?\s+([^\s]+)구(?:\s|$)/)?.[1];
+  const district=seoulDistricts.has(first)?first:seoulDistricts.has(addressDistrict)?addressDistrict:'';
+  return '서울.'+(district?district+'구':area||'세부 지역 미입력');
 }
 
 const domesticRegions=/^(국내|한국|대한민국|서울(?:특별시|시)?|경기(?:도)?|인천(?:광역시)?|부산(?:광역시)?|대구(?:광역시)?|대전(?:광역시)?|광주(?:광역시)?|울산(?:광역시)?|세종(?:특별자치시)?|강원(?:도|특별자치도)?|충청[남북]도?|전라[남북]도?|경상[남북]도?|전북특별자치도|충[남북]|전[남북]|경[남북]|충청|전라|경상|제주(?:도|특별자치도)?)(?:[.·\s]|$)/;
