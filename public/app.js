@@ -4,6 +4,8 @@ let lastCompleteAt=null;
 let loading=false,sharingEnabled=false,privateView=false,selectedRegion='',shareIds=[];
 let activeTab='records',galleryPhotos=[],lightboxPhotos=[],galleryLightbox=false;
 let categoryFilter='';
+const browseTabs=['records','favorites','wishlist'];
+const browseStates=new Map();
 let statsSnapshot;
 const openStats=new Set(),selectedStats=new Map(),statQueries=new Map();
 let extraPhotos=[],records=[],shops=[],selected=new Set(),selecting=false,shared=false,list=true,brandView=true;
@@ -37,7 +39,9 @@ function detail(record,trigger=document.activeElement){
   const scope=trigger?.closest('.stat-results, #cards, #detailContent, #galleryGrid');
   const placeId=trigger?.dataset.placeId;
   const opener=scope?.id&&placeId?{scope:scope.id,placeId}:null;
-  history.replaceState({...history.state,opener},'');
+  const browse=browseTabs.includes(activeTab)?{tab:activeTab,region:selectedRegion}:null;
+  const regionStep=history.state?.regionStep&&history.state.browse?.tab===activeTab&&history.state.browse.region===selectedRegion;
+  history.replaceState({...history.state,opener,browse,regionStep},'');
   hasDetailHistory=true;
   history.pushState({foodDetail:true},'',routeUrl(record.id));
   renderRoute();
@@ -75,7 +79,16 @@ if(menus.length){const menu=section('주문 메뉴 기록');for(const item of me
 }
 function closeDetail(){if(history.state?.foodDetail&&hasDetailHistory)history.back();else{history.replaceState({},'',routeUrl(null));renderRoute();}}
 history.scrollRestoration='manual';
-window.addEventListener('popstate',()=>renderRoute(false,true));
+window.addEventListener('popstate',()=>{
+  const context=history.state?.browse;
+  const wasDetail=!$('detailPage').hidden;
+  if(context&&!route().has('record')&&!shared){
+    if(activeTab!==context.tab)tab(context.tab);
+    if(selectedRegion!==context.region){selectedRegion=context.region;render();}
+  }
+  renderRoute(false,true);
+  if(context&&!wasDetail&&!route().has('record'))focusBrowseRegion();
+});
 window.addEventListener('hashchange',()=>{
   if(route().get('share')!==initialShareToken)location.reload();
 });
@@ -104,14 +117,26 @@ function renderRegionChooser(candidates,showResults){
     for(const {region,count} of group.items){
       const button=el('button',null,'region-choice');
       button.append(el('span',region),el('span',count+'곳','region-count'));
-      button.onclick=()=>{selectedRegion=region;render();$('selectedRegion').focus();};
+      button.onclick=()=>openRegion(region);
       choices.append(button);
     }
     section.append(choices);
     $('regionChoices').append(section);
   }
 }
-$('backToRegions').onclick=()=>{selectedRegion='';render();$($('search').value.trim()?'search':'regionHeading').focus();};
+function focusBrowseRegion(){
+  $(selectedRegion?'selectedRegion':$('search').value.trim()?'search':'regionHeading').focus();
+}
+function openRegion(region){
+  history.replaceState({...history.state,browse:{tab:activeTab,region:''},regionStep:false},'');
+  history.pushState({browse:{tab:activeTab,region},regionStep:true},'');
+  selectedRegion=region;render();focusBrowseRegion();
+}
+$('backToRegions').onclick=()=>{
+  const state=history.state;
+  if(state?.regionStep&&state.browse?.tab===activeTab&&state.browse.region===selectedRegion){history.back();return;}
+  selectedRegion='';render();focusBrowseRegion();
+};
 
 function operatingBadge(place){
   if(place.operatingStatus==='closed')return el('span','폐업 · 재방문 불가','tag operating-status');
@@ -209,6 +234,7 @@ function render(){
 }
 
 function resetDrill(){
+  if(history.state?.browse?.tab===activeTab)history.replaceState({...history.state,browse:{tab:activeTab,region:''},regionStep:false},'');
   selectedRegion='';
   categoryFilter='';
   $('search').value=$('type').value='';
@@ -268,9 +294,18 @@ async function init(){
   }catch(error){updateStatus(error.message);}
 }
 $('privateOpen').onclick=()=>{$('login').hidden=false;$('password').focus();};
-function renderGallery(){galleryPhotos=shared?[]:galleryEntries(records,{region:$('galleryRegion').value,type:$('galleryType').value,period:$('galleryPeriod').value||'all'});if(!shared){const covered=new Set(galleryPhotos.map(p=>p.shopId));galleryPhotos.push(...extraPhotos.filter(p=>!covered.has(p.shopId)&&((!$('galleryRegion').value||p.region===$('galleryRegion').value)&&(!$('galleryType').value||p.type===$('galleryType').value)&&!$('galleryPeriod').value)).filter(p=>{if(covered.has(p.shopId))return false;covered.add(p.shopId);return true;}));} $('galleryGrid').replaceChildren();$('galleryCount').textContent=`사진 ${galleryPhotos.length}장`; $('galleryEmpty').hidden=galleryPhotos.length>0;for(const [i,p] of galleryPhotos.entries()){const tile=el('button',null,'gallery-tile');tile.setAttribute('aria-label',`${p.name} ${p.date} 사진 확대`);tile.append(photo({...p,photos:[p]}));const info=el('div',null,'gallery-caption');info.append(el('strong',p.name),el('span',p.date));tile.append(info);tile.onclick=()=>showPhoto(i,galleryPhotos,true);$('galleryGrid').append(tile);}}
-for(const id of ['galleryRegion','galleryType','galleryPeriod'])$(id).onchange=renderGallery;
-function tab(name){if((shared&&name!=='records')||(name==='wishlist'&&!privateView))return;if(name==='stats'&&activeTab!=='stats'){openStats.clear();selectedStats.clear();statQueries.clear();}activeTab=name;$('recordsPanel').hidden=!['records','favorites','wishlist'].includes(name);$('favoriteHeading').hidden=name!=='favorites';$('wishlistHeading').hidden=name!=='wishlist';$('statsPanel').hidden=name!=='stats';$('galleryPanel').hidden=name!=='gallery';for(const n of ['records','favorites','wishlist','gallery','stats'])$(n+'Tab').setAttribute('aria-pressed',String(name===n));if(name==='stats')renderStats();if(name==='gallery')renderGallery();if(['records','favorites','wishlist'].includes(name))render();}
+function renderGallery(){galleryPhotos=shared?[]:galleryEntries(records,{region:$('galleryRegion').value,type:$('galleryType').value,period:$('galleryPeriod').value||'all'});if(!shared){const covered=new Set(galleryPhotos.map(p=>p.shopId));galleryPhotos.push(...extraPhotos.filter(p=>!covered.has(p.shopId)&&((!$('galleryRegion').value||p.region===$('galleryRegion').value)&&(!$('galleryType').value||p.type===$('galleryType').value)&&!$('galleryPeriod').value)).filter(p=>{if(covered.has(p.shopId))return false;covered.add(p.shopId);return true;}));} $('galleryGrid').replaceChildren();$('galleryCount').textContent=`사진 ${galleryPhotos.length}장`; $('galleryEmpty').hidden=galleryPhotos.length>0;const emptyFiltered=galleryPhotos.length===0&&galleryFilterIds.some(id=>$(id).value)&&Boolean(extraPhotos.length||records.some(record=>record.photos?.length));$('galleryNoMatches').hidden=!emptyFiltered;$('galleryNoPhotos').hidden=emptyFiltered;for(const [i,p] of galleryPhotos.entries()){const tile=el('button',null,'gallery-tile');tile.setAttribute('aria-label',`${p.name} ${p.date} 사진 확대`);tile.append(photo({...p,photos:[p]}));const info=el('div',null,'gallery-caption');info.append(el('strong',p.name),el('span',p.date));tile.append(info);tile.onclick=()=>showPhoto(i,galleryPhotos,true);$('galleryGrid').append(tile);}}
+const galleryFilterIds=['galleryRegion','galleryType','galleryPeriod'];
+for(const id of galleryFilterIds)$(id).onchange=renderGallery;
+$('clearGalleryFilters').onclick=()=>{for(const id of galleryFilterIds)$(id).value='';renderGallery();$('galleryRegion').focus();};
+function tab(name){if((shared&&name!=='records')||(name==='wishlist'&&!privateView))return;if(name==='stats'&&activeTab!=='stats'){openStats.clear();selectedStats.clear();statQueries.clear();}if(name!==activeTab){
+  if(browseTabs.includes(activeTab))browseStates.set(activeTab,{region:selectedRegion,category:categoryFilter,query:$('search').value,food:$('type').value});
+  activeTab=name;
+  if(browseTabs.includes(name)){
+    const state=browseStates.get(name)||{};
+    selectedRegion=state.region||'';categoryFilter=state.category||'';$('search').value=state.query||'';$('type').value=state.food||'';
+  }
+}$('recordsPanel').hidden=!['records','favorites','wishlist'].includes(name);$('favoriteHeading').hidden=name!=='favorites';$('wishlistHeading').hidden=name!=='wishlist';$('statsPanel').hidden=name!=='stats';$('galleryPanel').hidden=name!=='gallery';for(const n of ['records','favorites','wishlist','gallery','stats'])$(n+'Tab').setAttribute('aria-pressed',String(name===n));if(name==='stats')renderStats();if(name==='gallery')renderGallery();if(['records','favorites','wishlist'].includes(name))render();}
 function statSection(id,title,build){
   const panel=el('section',null,'chart-panel stat-section');
   const heading=el('h3'),toggle=el('button',null,'stat-toggle');
@@ -396,20 +431,15 @@ function renderStats(){
     body.append(grid,el('p','동일 지점 반복 이용률은 기간 내 2회 이상 이용한 지점 수를 전체 이용 지점 수로 나눈 값입니다.'));
   });
   const topRows=items=>items.map(item=>({label:item.name,key:item.id,visits:item.visits,caption:item.visitCount+'회'+(item.visitedBranchCount?' · '+item.visitedBranchCount+'곳':'')}));
-  const panels=[
-    overview,
-    statList('brands','자주 이용한 브랜드 TOP 5',topRows(bs.topBrands)),
-    statList('places','자주 이용한 장소 TOP 5',topRows(s.topPlaces)),
-    statList('regions','지역별 이용',s.byRegion),
-    statList('categories','카테고리별 이용',s.byPlaceType),
-    statList('foods','음식 종류별 이용',s.byType),
-    statList('purchases','구매 카테고리별 이용',s.byPurchaseCategory),
-    statList('revisit','재방문 의사',s.byRevisit.map(row=>({...row,caption:row.count+'회 · '+row.percent.toFixed(1)+'%'}))),
-    statList('years','연도별 이용',s.byYear),
-    statList('menu-categories','메뉴 카테고리별 이용',s.byMenuCategory),
-    statList('menus','개별 주문 메뉴 통계',s.byMenu),
+  const groups=[
+    ['이용 요약',[overview,statList('revisit','재방문 의사',s.byRevisit.map(row=>({...row,caption:row.count+'회 · '+row.percent.toFixed(1)+'%'}))),statList('years','연도별 이용',s.byYear)]],
+    ['장소와 지역',[statList('categories','카테고리별 이용',s.byPlaceType),statList('regions','지역별 이용',s.byRegion),statList('brands','자주 이용한 브랜드 TOP 5',topRows(bs.topBrands)),statList('places','자주 이용한 장소 TOP 5',topRows(s.topPlaces))]],
+    ['메뉴와 구매',[statList('foods','음식 종류별 이용',s.byType),statList('purchases','구매 카테고리별 이용',s.byPurchaseCategory),statList('menu-categories','메뉴 카테고리별 이용',s.byMenuCategory),statList('menus','개별 주문 메뉴 통계',s.byMenu)]],
   ];
-  $('charts').replaceChildren(...panels);
+  $('charts').replaceChildren(...groups.map(([title,panels])=>{
+    const group=el('section',null,'stat-group'),grid=el('div',null,'stat-group-grid');
+    grid.append(...panels);group.append(el('h3',title),grid);return group;
+  }));
 }
-$('resetFilters').onclick=resetDrill;$('recordsTab').onclick=()=>{tab('records');resetDrill();};$('statsTab').onclick=()=>tab('stats');$('favoritesTab').onclick=()=>{tab('favorites');resetDrill();};$('wishlistTab').onclick=()=>{tab('wishlist');resetDrill();};$('galleryTab').onclick=()=>tab('gallery');$('statsPeriod').onchange=renderStats;
+$('resetFilters').onclick=resetDrill;$('recordsTab').onclick=()=>tab('records');$('statsTab').onclick=()=>tab('stats');$('favoritesTab').onclick=()=>tab('favorites');$('wishlistTab').onclick=()=>tab('wishlist');$('galleryTab').onclick=()=>tab('gallery');$('statsPeriod').onchange=renderStats;
 init();

@@ -213,3 +213,12 @@ body{font-family:var(--body);font-size:15px;line-height:1.65}h1,h2,h3,.card h3,.
 
   #archiveTabs button { font-size: 12px; }
 }
+
+#charts { grid-template-columns: minmax(0, 1fr); }
+.stat-group > h3 { margin: 0 0 8px; }
+.stat-group-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr));
+  gap: 10px;
+}
+#clearGalleryFilters { min-height: 44px; }
