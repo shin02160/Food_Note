@@ -285,3 +285,60 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   .detail-top button { padding-inline: 10px; }
   .detail-title h1 { font-size: clamp(23px, 6vw, 28px); }
 }
+
+/* The mobile shell must fit even when system text or browser chrome changes. */
+@media (max-width: 600px) {
+  html, body { max-inline-size: 100%; overflow-x: clip; }
+
+  body > header, body > main {
+    box-sizing: border-box;
+    inline-size: 100%;
+    max-inline-size: 100%;
+    min-inline-size: 0;
+  }
+
+  @supports (width: 100dvw) {
+    body > header, body > main { max-inline-size: min(100%, 100dvw); }
+  }
+
+  body > header { flex-wrap: wrap; gap: 8px; }
+  body > header .brand { max-inline-size: 100%; overflow-wrap: anywhere; }
+  body > header > nav {
+    display: flex;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+  }
+
+  body > header > nav button { min-block-size: 44px; max-inline-size: 100%; }
+  #archive, #recordsPanel, #filters, #stats, .toolbar, .actions { min-inline-size: 0; }
+
+  #stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #stats .stat { min-inline-size: 0; overflow-wrap: anywhere; }
+
+  .kind-chips {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .kind-chip { min-inline-size: 0; padding-inline: 5px; }
+  .kind-chip .line-icon { flex-shrink: 0; }
+  #search { box-sizing: border-box; max-inline-size: 100%; }
+
+  #archiveTabs {
+    box-sizing: border-box;
+    inset-inline: 0;
+    transform: none;
+    inline-size: auto;
+    max-inline-size: 100%;
+    margin-inline: 0;
+  }
+  #archiveTabs button { min-inline-size: 0; overflow-wrap: anywhere; }
+}
+
+@media (max-width: 360px) {
+  #stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
