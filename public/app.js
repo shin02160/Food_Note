@@ -1,7 +1,9 @@
 import {normalizeCategory,restaurantRegion,groupRegionCards,summarize,periodRecords,galleryEntries,favoriteShops,groupPlaces,isWish,isShopping,groupBrands,brandSummary,searchPlace,rankStatPlaces,placeCategory,operatingLabels,usageLabels,isOverseasRegion} from './statistics.js';
 const $=id=>document.getElementById(id);const el=(tag,text,cls)=>{const e=document.createElement(tag);if(text!=null)e.textContent=text;if(cls)e.className=cls;return e};
 let lastCompleteAt=null;
-let loading=false,sharingEnabled=false,privateView=false,selectedRegion='',shareIds=[];
+let openWishlistAfterLogin=false;
+let pendingLoad;
+let sharingEnabled=false,privateView=false,selectedRegion='',shareIds=[];
 const mobileLayout=matchMedia('(max-width: 600px)');
 const pageScrollTop=()=>mobileLayout.matches?$('appScroll').scrollTop:window.scrollY;
 function scrollPage(top){
@@ -284,22 +286,27 @@ function resetDrill(){
   $('search').value=$('type').value='';
   render();
 }
-function show(data,masters=[],wishes=[],extras=[]){extraPhotos=extras;records=data.map((x,i)=>({...x,id:x.id||`shared-${i}`})).sort((a,b)=>b.date.localeCompare(a.date));shops=groupPlaces(records,masters,wishes,extras);$('login').hidden=true;$('archive').hidden=false;$('refresh').hidden=shared;$('detailRefresh').hidden=shared;$('wishlistTab').hidden=!privateView;$('shareMode').hidden=shared||!sharingEnabled;const shopIds=new Set(shops.filter(shop=>shop.visitCount).map(shop=>shop.id));for(const id of selected){if(!shopIds.has(id))selected.delete(id);}options('type','모든 음식',shops.map(x=>x.type));$('kindChips').replaceChildren();for(const [label,kind,symbol] of [['전체','','home'],['맛집','맛집','utensils'],['카페','카페','coffee'],['쇼핑','쇼핑','bag'],['관광지','관광지','images']]){const button=el('button',null,'kind-chip');button.dataset.kind=kind;button.append(svgIcon(symbol),document.createTextNode(label));button.onclick=()=>{if(categoryFilter!==kind){categoryFilter=kind;selectedRegion='';$('type').value='';}render();};$('kindChips').append(button);}$('stats').replaceChildren(...[['저장 브랜드',groupBrands(shops).length],['저장 장소',shops.length],['방문 기록',records.length],['위시리스트',shops.filter(isWish).length],['재방문 장소',shops.filter(x=>x.visitCount>1).length]].map(([label,n])=>{const d=el('div',null,'stat');d.append(el('span',label),el('strong',n));return d;}));$('archiveTabs').hidden=shared;$('stats').hidden=shared;options('galleryRegion','모든 지역',records.map(x=>x.region));options('galleryType','모든 음식',records.map(x=>x.type));options('galleryPeriod','전체 기간',records.flatMap(x=>[x.date.slice(0,4),x.date.slice(0,7)]));renderGallery();const oldPeriod=$('statsPeriod').value;options('statsPeriod','전체 기간',records.flatMap(x=>[x.date.slice(0,4),x.date.slice(0,7)]).filter(Boolean));$('statsPeriod').options[0].value='all';if([...$('statsPeriod').options].some(o=>o.value===oldPeriod))$('statsPeriod').value=oldPeriod;render();if(!shared)renderStats();ready=true;renderRoute(true);}
+function show(data,masters=[],wishes=[],extras=[]){extraPhotos=extras;records=data.map((x,i)=>({...x,id:x.id||`shared-${i}`})).sort((a,b)=>b.date.localeCompare(a.date));shops=groupPlaces(records,masters,wishes,extras);$('login').hidden=true;$('archive').hidden=false;$('refresh').hidden=shared;$('detailRefresh').hidden=shared;$('shareMode').hidden=shared||!sharingEnabled;const shopIds=new Set(shops.filter(shop=>shop.visitCount).map(shop=>shop.id));for(const id of selected){if(!shopIds.has(id))selected.delete(id);}options('type','모든 음식',shops.map(x=>x.type));$('kindChips').replaceChildren();for(const [label,kind,symbol] of [['전체','','home'],['맛집','맛집','utensils'],['카페','카페','coffee'],['쇼핑','쇼핑','bag'],['관광지','관광지','images']]){const button=el('button',null,'kind-chip');button.dataset.kind=kind;button.append(svgIcon(symbol),document.createTextNode(label));button.onclick=()=>{if(categoryFilter!==kind){categoryFilter=kind;selectedRegion='';$('type').value='';}render();};$('kindChips').append(button);}$('stats').replaceChildren(...[['저장 브랜드',groupBrands(shops).length],['저장 장소',shops.length],['방문 기록',records.length],['위시리스트',shops.filter(isWish).length],['재방문 장소',shops.filter(x=>x.visitCount>1).length]].map(([label,n])=>{const d=el('div',null,'stat');d.append(el('span',label),el('strong',n));return d;}));$('archiveTabs').hidden=shared;$('stats').hidden=shared;options('galleryRegion','모든 지역',records.map(x=>x.region));options('galleryType','모든 음식',records.map(x=>x.type));options('galleryPeriod','전체 기간',records.flatMap(x=>[x.date.slice(0,4),x.date.slice(0,7)]));renderGallery();const oldPeriod=$('statsPeriod').value;options('statsPeriod','전체 기간',records.flatMap(x=>[x.date.slice(0,4),x.date.slice(0,7)]).filter(Boolean));$('statsPeriod').options[0].value='all';if([...$('statsPeriod').options].some(o=>o.value===oldPeriod))$('statsPeriod').value=oldPeriod;render();if(!shared)renderStats();ready=true;renderRoute(true);}
 function updateStatus(message){
   $('mode').textContent=message;
   $('detailStatus').textContent=message;
 }
 
-async function load(){
-  if(shared||loading)return;
-  loading=true;
+function load(){
+  if(shared)return Promise.resolve();
+  if(!pendingLoad)pendingLoad=loadArchive().finally(()=>{pendingLoad=null;});
+  return pendingLoad;
+}
+
+async function loadArchive(){
   $('refresh').disabled=$('detailRefresh').disabled=true;
   updateStatus('Notion에서 기록을 불러오는 중…');
   try{
     const result=await api('records');
     const wasPrivate=privateView;
     setPrivateView(result);
-    if(wasPrivate&&!privateView){lastCompleteAt=null;browseStates.delete('wishlist');}
+    if(wasPrivate!==privateView)lastCompleteAt=null;
+    if(wasPrivate&&!privateView)browseStates.delete('wishlist');
     if(result.partial&&lastCompleteAt){updateStatus(result.warning+' 이전 조회 기록 ('+lastCompleteAt.toLocaleString('ko-KR',{timeZone:'Asia/Seoul'})+')을 표시합니다.');return;}
     show(result.records,result.places,result.wishes,result.extraPhotos);
     if(!privateView&&activeTab==='wishlist')tab('records');
@@ -308,11 +315,23 @@ async function load(){
   }catch(error){
     updateStatus(error.message+(lastCompleteAt?' 이전 조회 기록 ('+lastCompleteAt.toLocaleString('ko-KR',{timeZone:'Asia/Seoul'})+')을 표시합니다.':''));
   }finally{
-    loading=false;
     $('refresh').disabled=$('detailRefresh').disabled=false;
   }
 }
-$('loginForm').onsubmit=async e=>{e.preventDefault();$('loginError').textContent='';try{await api('login',{password:$('password').value});$('password').value='';location.reload();}catch(e){$('loginError').textContent=e.message;}};
+$('loginForm').onsubmit=async event=>{
+  event.preventDefault();
+  const error=$('loginError'),input=$('password'),submit=event.currentTarget.querySelector('button');
+  error.textContent='';submit.disabled=true;
+  try{
+    await api('login',{password:input.value});
+    input.value='';
+    if(pendingLoad)await pendingLoad;
+    if(!privateView)await load();
+    if(privateView&&openWishlistAfterLogin){tab('wishlist');scrollPage(0);$('wishlistTab').focus({preventScroll:true});}
+    if(privateView)openWishlistAfterLogin=false;
+  }catch(failure){error.textContent=failure.message;}
+  finally{submit.disabled=false;}
+};
 $('refresh').onclick=$('detailRefresh').onclick=load;
 document.addEventListener('visibilitychange',()=>{
   if(!document.hidden&&!$('refresh').hidden)load();
@@ -344,8 +363,14 @@ function setPrivateView(status){
   privateView=Boolean(status.authenticated);
   $('privateOpen').hidden=!status.privateEnabled||privateView;
   $('logout').hidden=!privateView;
+  $('wishlistTab').hidden=shared||!status.privateEnabled;
+  $('wishlistTab').setAttribute('aria-label',privateView?'위시리스트':'위시리스트, 로그인 필요');
 }
-$('privateOpen').onclick=()=>{$('login').hidden=false;$('password').focus();};
+function openPrivateLogin(wishlist=false){
+  openWishlistAfterLogin=wishlist;
+  $('login').hidden=false;$('password').focus();
+}
+$('privateOpen').onclick=()=>openPrivateLogin();
 function renderGallery(){galleryPhotos=shared?[]:galleryEntries(records,{region:$('galleryRegion').value,type:$('galleryType').value,period:$('galleryPeriod').value||'all'});if(!shared){const covered=new Set(galleryPhotos.map(p=>p.shopId));galleryPhotos.push(...extraPhotos.filter(p=>!covered.has(p.shopId)&&((!$('galleryRegion').value||p.region===$('galleryRegion').value)&&(!$('galleryType').value||p.type===$('galleryType').value)&&!$('galleryPeriod').value)).filter(p=>{if(covered.has(p.shopId))return false;covered.add(p.shopId);return true;}));} $('galleryGrid').replaceChildren();$('galleryCount').textContent=`사진 ${galleryPhotos.length}장`; $('galleryEmpty').hidden=galleryPhotos.length>0;const emptyFiltered=galleryPhotos.length===0&&galleryFilterIds.some(id=>$(id).value)&&Boolean(extraPhotos.length||records.some(record=>record.photos?.length));$('galleryNoMatches').hidden=!emptyFiltered;$('galleryNoPhotos').hidden=emptyFiltered;for(const [i,p] of galleryPhotos.entries()){const tile=el('button',null,'gallery-tile');tile.setAttribute('aria-label',`${p.name} ${p.date} 사진 확대`);tile.append(photo({...p,photos:[p]}));const info=el('div',null,'gallery-caption');info.append(el('strong',p.name),el('span',p.date));tile.append(info);tile.onclick=()=>showPhoto(i,galleryPhotos,true);$('galleryGrid').append(tile);}}
 const galleryFilterIds=['galleryRegion','galleryType','galleryPeriod'];
 for(const id of galleryFilterIds)$(id).onchange=renderGallery;
@@ -493,5 +518,5 @@ function renderStats(){
     grid.append(...panels);group.append(el('h3',title),grid);return group;
   }));
 }
-$('resetFilters').onclick=resetDrill;$('recordsTab').onclick=()=>tab('records');$('statsTab').onclick=()=>tab('stats');$('favoritesTab').onclick=()=>tab('favorites');$('wishlistTab').onclick=()=>tab('wishlist');$('galleryTab').onclick=()=>tab('gallery');$('statsPeriod').onchange=renderStats;
+$('resetFilters').onclick=resetDrill;$('recordsTab').onclick=()=>tab('records');$('statsTab').onclick=()=>tab('stats');$('favoritesTab').onclick=()=>tab('favorites');$('wishlistTab').onclick=()=>{if(privateView)tab('wishlist');else openPrivateLogin(true);};$('galleryTab').onclick=()=>tab('gallery');$('statsPeriod').onchange=renderStats;
 init();
